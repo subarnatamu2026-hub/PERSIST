@@ -70,7 +70,6 @@ class VoxelDitDenoiserArgs:
     voxel_rotary_max_freq : int = 512
     pixel_rotary_max_freq : int = 256
     qk_rms_norm : bool = True
-    legacy_qk_norm : bool = False  # Set True for old checkpoints (applies QK norm after RoPE)
 
     @property
     def name(self) -> str:
@@ -151,7 +150,6 @@ class VoxelTemporalAxialAttention(nn.Module):
         rotary_emb: RotaryEmbedding,
         is_causal: bool = True,
         qk_rms_norm: bool = False,
-        legacy_qk_norm: bool = False,
     ):
         super().__init__()
         self.inner_dim = dim_head * heads
@@ -164,7 +162,6 @@ class VoxelTemporalAxialAttention(nn.Module):
         self.is_causal = is_causal
 
         self.qk_rms_norm = qk_rms_norm
-        self.legacy_qk_norm = legacy_qk_norm
         if qk_rms_norm:
             self.q_rms_norm = MultiHeadRMSNorm(self.head_dim, heads)
             self.k_rms_norm = MultiHeadRMSNorm(self.head_dim, heads)
@@ -185,7 +182,7 @@ class VoxelTemporalAxialAttention(nn.Module):
             axial_freqs = _kv_cache_rope_offset(self.rotary_emb, axial_freqs, global_start_idx)
 
         # Correct order: QK RMSNorm first, then RoPE
-        if self.qk_rms_norm and not self.legacy_qk_norm:
+        if self.qk_rms_norm:
             q = self.q_rms_norm(q)
             k = self.k_rms_norm(k)
 
@@ -193,10 +190,6 @@ class VoxelTemporalAxialAttention(nn.Module):
         k = apply_rotary_emb(axial_freqs, k)
 
         q, k, v = map(lambda t: t.contiguous(), (q, k, v))
-
-        if self.qk_rms_norm and self.legacy_qk_norm:
-            q = self.q_rms_norm(q)
-            k = self.k_rms_norm(k)
 
         # KV cache management (in compile-disabled helper to avoid dynamo guards)
         if kv_cache is not None:
@@ -222,7 +215,6 @@ class VoxelSpatialAxialAttention(nn.Module):
         dim_head: int,
         rotary_emb: RotaryEmbedding,
         qk_rms_norm: bool = False,
-        legacy_qk_norm: bool = False,
     ):
         super().__init__()
         self.inner_dim = dim_head * heads
@@ -234,7 +226,6 @@ class VoxelSpatialAxialAttention(nn.Module):
         self.rotary_emb = rotary_emb
 
         self.qk_rms_norm = qk_rms_norm
-        self.legacy_qk_norm = legacy_qk_norm
         if qk_rms_norm:
             self.q_rms_norm = MultiHeadRMSNorm(self.head_dim, heads)
             self.k_rms_norm = MultiHeadRMSNorm(self.head_dim, heads)
@@ -249,8 +240,7 @@ class VoxelSpatialAxialAttention(nn.Module):
         v = rearrange(v, "B T S (h d) -> (B T) h S d", h=self.heads)
 
         # Correct order: QK RMSNorm first, then RoPE
-        # legacy_qk_norm=True preserves old (incorrect) behavior for backward compatibility
-        if self.qk_rms_norm and not self.legacy_qk_norm:
+        if self.qk_rms_norm:
             q = self.q_rms_norm(q)
             k = self.k_rms_norm(k)
 
@@ -258,10 +248,6 @@ class VoxelSpatialAxialAttention(nn.Module):
             freqs = self.rotary_emb.axial_freqs
             q = apply_rotary_emb(freqs, q)
             k = apply_rotary_emb(freqs, k)
-
-        if self.qk_rms_norm and self.legacy_qk_norm:
-            q = self.q_rms_norm(q)
-            k = self.k_rms_norm(k)
 
         x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=False)
 
@@ -283,7 +269,6 @@ class VoxelPixelCrossAttention(nn.Module):
         rotary_cond_emb: Optional[RotaryEmbedding] = None,
         is_causal: bool = False,
         qk_rms_norm: bool = False,
-        legacy_qk_norm: bool = False,
         context_window_size: int = 32
     ):
         super().__init__()
@@ -298,7 +283,6 @@ class VoxelPixelCrossAttention(nn.Module):
         self.to_out = nn.Linear(self.inner_dim, dim)
         self.is_causal = is_causal
         self.qk_rms_norm = qk_rms_norm
-        self.legacy_qk_norm = legacy_qk_norm
         if qk_rms_norm:
             self.q_rms_norm = MultiHeadRMSNorm(self.head_dim, heads)
             self.k_rms_norm = MultiHeadRMSNorm(self.head_dim, heads)
@@ -323,7 +307,7 @@ class VoxelPixelCrossAttention(nn.Module):
         v = rearrange(v, "B Tc Sc (h d) -> B h Tc Sc d", h=self.heads)
 
         # Correct order: QK RMSNorm first, then RoPE
-        if self.qk_rms_norm and not self.legacy_qk_norm:
+        if self.qk_rms_norm:
             q = rearrange(q, "B h T S d -> B h (T S) d", B=B, T=T, S=S)
             k = rearrange(k, "B h Tc Sc d -> B h (Tc Sc) d", B=B, Tc=Tc, Sc=Sc)
             q = self.q_rms_norm(q)
@@ -355,10 +339,6 @@ class VoxelPixelCrossAttention(nn.Module):
             # Q: flatten spatial
             q = rearrange(q, "B h T S d -> B h (T S) d", B=B, T=T, S=S)
 
-            if self.qk_rms_norm and self.legacy_qk_norm:
-                q = self.q_rms_norm(q)
-                k = self.k_rms_norm(k)
-
             # During prefill (T>1), causal mask is needed.
             # During single-frame decode, cache only contains past + current frames.
             if prefill and self.is_causal:
@@ -374,9 +354,6 @@ class VoxelPixelCrossAttention(nn.Module):
             q = rearrange(q, "B h T S d -> B h (T S) d", B=B, T=T, S=S)
             k = rearrange(k, "B h Tc Sc d -> B h (Tc Sc) d", B=B, Tc=Tc, Sc=Sc)
             v = rearrange(v, "B h Tc Sc d -> B h (Tc Sc) d", B=B, Tc=Tc, Sc=Sc)
-            if self.qk_rms_norm and self.legacy_qk_norm:
-                q = self.q_rms_norm(q)
-                k = self.k_rms_norm(k)
 
             if self.is_causal:
                 attn_mask = self.attn_mask[:T, :, :Tc, :]  # (T, 1, Tc, 1)
@@ -404,7 +381,6 @@ class SpatioTemporalCrossVoxelDiTBlock(nn.Module):
         mlp_ratio=4.0,
         is_causal=True,
         qk_rms_norm=False,
-        legacy_qk_norm=False,
         context_window_size=32,
         spatial_emb: Optional[RotaryEmbedding] = None,
         temporal_rotary_emb: Optional[RotaryEmbedding] = None,
@@ -423,7 +399,6 @@ class SpatioTemporalCrossVoxelDiTBlock(nn.Module):
             dim_head=hidden_size // num_heads,
             rotary_emb=spatial_emb,
             qk_rms_norm=qk_rms_norm,
-            legacy_qk_norm=legacy_qk_norm,
         )
         self.s_norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.s_mlp = Mlp(
@@ -442,7 +417,6 @@ class SpatioTemporalCrossVoxelDiTBlock(nn.Module):
             is_causal=is_causal,
             rotary_emb=temporal_rotary_emb,
             qk_rms_norm=qk_rms_norm,
-            legacy_qk_norm=legacy_qk_norm,
         )
         self.t_norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.t_mlp = Mlp(
@@ -463,7 +437,6 @@ class SpatioTemporalCrossVoxelDiTBlock(nn.Module):
             rotary_emb=cross_voxel_emb,
             rotary_cond_emb=cross_pixel_emb,
             qk_rms_norm=qk_rms_norm,
-            legacy_qk_norm=legacy_qk_norm,
             context_window_size=context_window_size
 
         )
@@ -546,7 +519,6 @@ class VoxelDiT(nn.Module):
         voxel_rotary_max_freq=1024,
         pixel_rotary_max_freq=256,
         qk_rms_norm=True,
-        legacy_qk_norm=False,
     ):
         super().__init__()
         self.vox_grid_size = (input_x, input_y, input_z)
@@ -677,7 +649,6 @@ class VoxelDiT(nn.Module):
                     mlp_ratio=mlp_ratio,
                     is_causal=True,
                     qk_rms_norm=qk_rms_norm,
-                    legacy_qk_norm=legacy_qk_norm,
                     context_window_size=context_window_size,
                     spatial_emb=self.voxel_spatial_emb if not voxel_use_ape else None,
                     temporal_rotary_emb=self.temporal_rotary_emb,

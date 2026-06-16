@@ -95,7 +95,6 @@ class TemporalAxialAttention(nn.Module):
         v = rearrange(v, "B T (h d) -> B h T d", h=self.heads)
 
         # Correct order: QK RMSNorm first, then RoPE
-        # legacy_qk_norm=True preserves old (incorrect) behavior for backward compatibility
         if self.qk_rms_norm:
             q = self.q_rms_norm(q)
             k = self.k_rms_norm(k)

@@ -96,7 +96,6 @@ class PixelTemporalAxialAttention(nn.Module):
         rotary_emb: RotaryEmbedding,
         is_causal: bool = True,
         qk_rms_norm: bool = False,
-        legacy_qk_norm: bool = False,
         flash_attn: bool = False,
     ):
         super().__init__()
@@ -109,7 +108,6 @@ class PixelTemporalAxialAttention(nn.Module):
         self.rotary_emb = rotary_emb
         self.is_causal = is_causal
         self.qk_rms_norm = qk_rms_norm
-        self.legacy_qk_norm = legacy_qk_norm
         self.flash_attn = flash_attn
 
         if qk_rms_norm:
@@ -132,7 +130,7 @@ class PixelTemporalAxialAttention(nn.Module):
             axial_freqs = _kv_cache_rope_offset(self.rotary_emb, axial_freqs, global_start_idx, self.rotary_emb.spatial_sequence_shape)
 
         # Correct order: QK RMSNorm first, then RoPE
-        if self.qk_rms_norm and not self.legacy_qk_norm:
+        if self.qk_rms_norm:
             q = self.q_rms_norm(q)
             k = self.k_rms_norm(k)
 
@@ -140,10 +138,6 @@ class PixelTemporalAxialAttention(nn.Module):
         k = apply_rotary_emb(axial_freqs, k)
 
         q, k, v = map(lambda t: t.contiguous(), (q, k, v))
-
-        if self.qk_rms_norm and self.legacy_qk_norm:
-            q = self.q_rms_norm(q)
-            k = self.k_rms_norm(k)
 
         # KV cache management (in compile-disabled helper to avoid dynamo guards)
         if kv_cache is not None:
@@ -172,7 +166,6 @@ class PixelSpatialAxialAttention(nn.Module):
         dim_head: int,
         rotary_emb: RotaryEmbedding,
         qk_rms_norm: bool = False,
-        legacy_qk_norm: bool = False,
         flash_attn: bool = False,
     ):
         super().__init__()
@@ -184,7 +177,6 @@ class PixelSpatialAxialAttention(nn.Module):
         self.to_out = nn.Linear(self.inner_dim, dim)
         self.rotary_emb = rotary_emb
         self.qk_rms_norm = qk_rms_norm
-        self.legacy_qk_norm = legacy_qk_norm
         self.flash_attn = flash_attn
 
         if qk_rms_norm:
@@ -201,8 +193,7 @@ class PixelSpatialAxialAttention(nn.Module):
         v = rearrange(v, "B T H W (h d) -> (B T) h H W d", h=self.heads)
 
         # Correct order: QK RMSNorm first, then RoPE
-        # legacy_qk_norm=True preserves old (incorrect) behavior for backward compatibility
-        if self.qk_rms_norm and not self.legacy_qk_norm:
+        if self.qk_rms_norm:
             q = rearrange(q, "(B T) h H W d -> (B T) h (H W) d", B=B, T=T, h=self.heads)
             k = rearrange(k, "(B T) h H W d -> (B T) h (H W) d", B=B, T=T, h=self.heads)
             q = self.q_rms_norm(q)
@@ -218,9 +209,6 @@ class PixelSpatialAxialAttention(nn.Module):
         q = rearrange(q, "(B T) h H W d -> (B T) h (H W) d", B=B, T=T, h=self.heads)
         k = rearrange(k, "(B T) h H W d -> (B T) h (H W) d", B=B, T=T, h=self.heads)
         v = rearrange(v, "(B T) h H W d -> (B T) h (H W) d", B=B, T=T, h=self.heads)
-        if self.qk_rms_norm and self.legacy_qk_norm:
-            q = self.q_rms_norm(q)
-            k = self.k_rms_norm(k)
 
         if self.flash_attn:
             print("Flash Attn is disabled")
@@ -243,7 +231,6 @@ class SpatioTemporalPixelDiTBlock(nn.Module):
             mlp_ratio=4.0,
             is_causal=True,
             qk_rms_norm=False,
-            legacy_qk_norm=False,
             flash_attn=False,
             pixel_spatial_emb: Optional[RotaryEmbedding] = None,
             temporal_rotary_emb: Optional[RotaryEmbedding] = None,
@@ -263,7 +250,6 @@ class SpatioTemporalPixelDiTBlock(nn.Module):
             dim_head=hidden_size // num_heads,
             rotary_emb=pixel_spatial_emb,
             qk_rms_norm=qk_rms_norm,
-            legacy_qk_norm=legacy_qk_norm,
             flash_attn=self.flash_attn,
         )
         self.s_norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -285,7 +271,6 @@ class SpatioTemporalPixelDiTBlock(nn.Module):
             is_causal=is_causal,
             rotary_emb=temporal_rotary_emb,
             qk_rms_norm=qk_rms_norm,
-            legacy_qk_norm=legacy_qk_norm,
             flash_attn=self.flash_attn
         )
         self.t_norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -598,7 +583,6 @@ class FrameDepthStackPixelDitDenoiserArgs:
     voxel_dim : int = 48
     num_freqs : int = 8
     qk_rms_norm : bool = True
-    legacy_qk_norm : bool = False
     flash_attn : bool = False
     detach_raster_grad : bool = False
     learned_padding : bool = False
@@ -638,7 +622,6 @@ class FrameDepthStackPixelDiT(nn.Module):
             voxel_dim=48,
             num_freqs=8,
             qk_rms_norm=False,
-            legacy_qk_norm=False,
             detach_raster_grad=False,
             flash_attn=False,
             learned_padding=False,
@@ -744,7 +727,6 @@ class FrameDepthStackPixelDiT(nn.Module):
                     mlp_ratio=mlp_ratio,
                     is_causal=True,
                     qk_rms_norm=qk_rms_norm,
-                    legacy_qk_norm=legacy_qk_norm,
                     flash_attn=self.flash_attn,
                     pixel_spatial_emb=self.pixel_spatial_emb,
                     temporal_rotary_emb=self.temporal_rotary_emb,

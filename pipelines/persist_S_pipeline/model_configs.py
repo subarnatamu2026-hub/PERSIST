@@ -126,7 +126,6 @@ class VoxelDitDenoiserArgs:
     voxel_rotary_max_freq : int = 512 # non-default
     pixel_rotary_max_freq : int = 256
     qk_rms_norm : bool = True
-    legacy_qk_norm : bool = False
 
     @property
     def name(self) -> str:
