@@ -1,0 +1,71 @@
+[project]
+name = "voxelwm"
+version = "0.1.0"
+description = "Voxel-based latent-diffusion world model"
+readme = "README.md"
+requires-python = "==3.11.*"
+dependencies = [
+    "tyro>=0.8.14",
+    "accelerate==1.9.0",
+    "diffusers>=0.34.0",
+    "einops==0.8.1",
+    "setuptools==75.6.0",
+    "loguru>=0.7.2",
+    "huggingface-hub>=0.24.0",
+    "GitPython>=3.1.44",
+    "protobuf==3.20.3",
+    "imageio==2.37.0",
+    "imageio-ffmpeg==0.6.0",
+    "tqdm==4.66.3",
+    "easydict==1.13",
+    "scipy>=1.15.2",
+    "pandas>=2.3.1",
+    "xvfbwrapper==0.2.13",
+    "ninja",
+    "utils3d",
+]
+
+################ Dependency groups and conflicts ################
+
+[dependency-groups]
+cu = [
+  "torch==2.7.1",
+  "torchvision==0.22.1",
+  "timm",
+  "numpy==1.26.4",
+]
+env = [
+  "craftium",
+  "gymnasium==0.29.1",
+]
+
+[tool.uv]
+default-groups = []
+
+################ Package source ################
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu126", group = "cu" },
+]
+torchvision = [
+  { index = "pytorch-cu126", group = "cu" },
+]
+craftium = { path = "gym_envs/craftium" }
+utils3d = { git = "https://github.com/EasternJournalist/utils3d", rev = "c5daf6f6c244d251f252102d09e9b7bcef791a38" }
+nvdiffrast = { git = "https://github.com/NVlabs/nvdiffrast" }
+
+################ Package index ################
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+################ Ruff settings ################
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

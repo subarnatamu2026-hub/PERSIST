@@ -1,0 +1,3 @@
+[submodule "gym_envs/craftium"]
+	path = gym_envs/craftium
+	url = https://github.com/francelico/craftium

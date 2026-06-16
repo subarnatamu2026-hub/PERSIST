@@ -1,0 +1,33 @@
+## wip buffer
+wip/
+
+## Datasets, data generation
+datasets/
+minetest-run*/
+
+## Model weights and checkpoints
+weights/
+
+## log files
+*.log
+*.out
+
+## run files
+outputs/
+local_outputs/
+
+## Python
+__pycache__/
+
+## IDEs
+.idea/
+.run/
+.vscode/
+mlruns/
+
+dynamic_videos/
+minetest_evaldata/
+make_gif.py
+render_mesh_animation.py
+.amltconfig
+.amltignore
