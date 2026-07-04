@@ -9,14 +9,14 @@
 
 Official codebase for [PERSIST](https://francelico.github.io/persist.github.io/) (ICML 2026), a world model that generates coherent rollouts over thousands of steps by modelling a dynamic 3D state of the world.
 <div align="center">
-<img width="720" alt="hero_loop90" src="https://github.com/user-attachments/assets/adbe3f57-4f62-4418-a767-6ebb64a68ba8" />
+<img width="720" alt="hero_loop90" src="assets/hero_loop90.webp" />
 </div>
 
 ## PERSIST
 PERSIST is a voxel-based latent-diffusion **world model**. Given an
 initial image and camera pose, PERSIST generates an **interactive**, **dynamic** and **explorable** voxel world.
 
-<img width="2500" height="993" alt="image" src="https://github.com/user-attachments/assets/ed2d2a9f-7eae-40b9-9284-e6c9afc1eb9f" />
+<img width="2500" height="993" alt="image" src="assets/method.png" />
 
 PERSIST autoregressively predicts future
 voxel world states, pixel observations and camera states based on input player actions. Generation runs as a multi-stage pipeline: the
