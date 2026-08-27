@@ -131,6 +131,11 @@ class Args:
     debug: bool = False
     """Enable debug mode. Will run the code in a single process."""
 
+    navigation_only: bool = True
+    """If True, the agent only performs navigation actions (walk, strafe, jump, sneak,
+    sprint and looking around). Interaction actions (dig/place, and therefore hitting
+    mobs) are disabled. Set to False to restore the original mixed action distribution."""
+
     collect_dynamic_data: bool = True
     """If True, spawn dynamic agents (mobs/animals) in Craftium and save their per-frame
     state to an extra `data_dynamic.npz` file alongside `data.npz` for each level."""
@@ -425,6 +430,14 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
         [0.6] + [0.2 for _ in range(2)],  # "noop", "mouse y-0.9", ... , "mouse y+0.9"
     ]
     assert np.allclose([np.sum(prob) for prob in action_probs], 1)
+
+    if args.navigation_only:
+        # Keep only navigation: walking/jumping/sneaking/sprinting (group 0) and
+        # looking around (groups 2 and 3). Disable the interaction group (dig and
+        # place); note that "dig" (left click) is also how the player would hit
+        # mobs, so this also prevents attacking the sheep.
+        action_probs[1] = [1.0] + [0.0 for _ in range(len(action_probs[1]) - 1)]
+
     action_cmf = [np.cumsum(prob) for prob in action_probs]
 
     if args.gen_sha256_while_collecting:
