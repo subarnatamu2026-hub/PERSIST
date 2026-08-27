@@ -18,6 +18,14 @@ import utils3d
 from loguru import logger
 from xvfbwrapper import Xvfb
 
+# Make both the repo root (for gym_envs/utils) and this script's directory
+# (for dynamic_data) importable regardless of how the script is launched.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_THIS_DIR)
+for _p in (_REPO_ROOT, _THIS_DIR):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 from gym_envs.craftium.craftium.wrappers import NueToEnuVoxelObs, enu_to_nue
 from utils import get_file_hash, seed_everything
 from utils.action_util import MultiDiscreteActionWrapper
@@ -685,7 +693,20 @@ if __name__ == "__main__":
     end = len(total_level_seeds) * (args.rank + 1) // args.world_size
     level_seeds_to_process = total_level_seeds[start:end]
 
-    vdisplay = Xvfb()
-    vdisplay.start()
-    generate_level_chunk(level_seeds_to_process, args, dataset_params, device)
-    vdisplay.stop()
+    # If a display is already available (e.g. when launched via `xvfb-run`),
+    # use it directly. Otherwise spawn our own virtual display. We bound the
+    # display number to a small value because some Xvfb builds fail on the very
+    # large random display numbers xvfbwrapper picks by default.
+    vdisplay = None
+    if not os.environ.get("DISPLAY"):
+        try:
+            vdisplay = Xvfb(display=99 + args.rank)
+        except TypeError:
+            # Older xvfbwrapper without the `display` kwarg.
+            vdisplay = Xvfb()
+        vdisplay.start()
+    try:
+        generate_level_chunk(level_seeds_to_process, args, dataset_params, device)
+    finally:
+        if vdisplay is not None:
+            vdisplay.stop()
