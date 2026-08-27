@@ -21,6 +21,7 @@ from xvfbwrapper import Xvfb
 from gym_envs.craftium.craftium.wrappers import NueToEnuVoxelObs, enu_to_nue
 from utils import get_file_hash, seed_everything
 from utils.action_util import MultiDiscreteActionWrapper
+from dynamic_data import collect_dynamic_data
 
 EMPTY_SPACE_NODE_IDS = [126, 127]
 
@@ -121,6 +122,16 @@ class Args:
 
     debug: bool = False
     """Enable debug mode. Will run the code in a single process."""
+
+    collect_dynamic_data: bool = True
+    """If True, spawn dynamic agents (mobs/animals) in Craftium and save their per-frame
+    state to an extra `data_dynamic.npz` file alongside `data.npz` for each level."""
+
+    num_dynamic_agents: int = 10
+    """Number of dynamic agents (e.g. sheep) to spawn around the player."""
+
+    dynamic_agent_entity: str = "mobs_mc:sheep"
+    """Entity name of the dynamic agents to spawn (VoxeLibre entity id)."""
 
 
 def make_env(craftium_kwargs, mt_port_offset):
@@ -498,6 +509,11 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "mono_font_size": 5,
                 "font_shadow": False,
                 "repeat_place_time": 0.16,
+                # Dynamic-agent (mobs/animals) spawning + logging in Craftium.
+                # Written to minetest.conf and read by the craftium_env mod.
+                "dynamic_agents_enable": "true" if args.collect_dynamic_data else "false",
+                "dynamic_agents_count": args.num_dynamic_agents,
+                "dynamic_agents_entity": args.dynamic_agent_entity,
             },
         )
         # mt_port should remain in the range [args.mt_port [default:49152], 65535]
@@ -614,8 +630,26 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
             if args.gen_sha256_while_collecting:
                 with open(level_folder / "sha256.txt", "w") as f:
                     f.write(get_file_hash(level_folder / "data.npz"))
+
+            # Collect dynamic-agent (mobs/animals) data logged by Craftium and
+            # save it as an extra data_dynamic.npz aligned to the collected
+            # frames. Must run before env.close() clears the run directory.
+            if args.collect_dynamic_data:
+                try:
+                    dyn = collect_dynamic_data(
+                        env.unwrapped.mt.run_dir,
+                        level_data["player_pos"],
+                        num_agents=args.num_dynamic_agents,
+                        entity_name=args.dynamic_agent_entity,
+                    )
+                    if dyn is not None:
+                        np.savez_compressed(level_folder / "data_dynamic.npz", **dyn)
+                        logger.info(f"Saved data_dynamic.npz for level {seed}")
+                except Exception as e:
+                    logger.warning(f"Failed to collect dynamic data for level {seed}: {e}")
+
             logger.info(f"Finish saving level {seed}, length:{ts}, time:{time.time() - t_start}")
-            
+
             env.unwrapped.close(not args.debug) # in debug mode, close(False) will not delete the mt_run_dir
         except Exception as e:
             logger.error(

@@ -12,6 +12,7 @@ opendynamic10kL/
 |   └── OpenWorldDataset-v0/
 |       ├── 1000095647/                     # a specific level (seed as folder name)
 |       |   ├── data.npz                    # data file: see next section for detailed descriptions
+|       |   ├── data_dynamic.npz            # dynamic-agent (mobs/animals) data, if collected
 |       |   ├── rgb.mp4                     # obs video
 |       |   ├── sha256.txt                  # [POST] hash of the raw data
 |       |   └── level_metadata.json         # metadata for this level
@@ -80,3 +81,27 @@ The `data.npz` file for a specific level contains
 * `reward`: shape `(T,)`
 * `termination_flag`: shape `(T,)`
 * `truncation_flag`: shape `(T,)`
+
+## Dynamic-agent data content (`data_dynamic.npz`)
+
+When `generate_raw_data.py` is run with `--collect_dynamic_data` (default on),
+Craftium spawns `--num_dynamic_agents` dynamic agents (mobs/animals; currently
+`--dynamic_agent_entity mobs_mc:sheep`) around the player and logs their state
+each frame. The result is saved next to `data.npz` as `data_dynamic.npz`, aligned
+to the same `T` collected frames (aligned by matching `player_pos`). Positions
+and velocities use the same **ENU** convention as `player_pos` in `data.npz`.
+Agents keep a stable slot index `n` in `[0, N)`; when an agent is missing/dead in
+a frame its `dyn_present` entry is 0 and its other values are 0.
+
+* `dyn_present`: shape `(T, N)` `int8` — 1 if agent `n` exists at frame `t`
+* `dyn_pos`: shape `(T, N, 3)` — agent world position (ENU)
+* `dyn_vel`: shape `(T, N, 3)` — agent velocity (ENU)
+* `dyn_yaw`: shape `(T, N)` — agent yaw in radians (about the up axis)
+* `dyn_hp`: shape `(T, N)` — agent health points
+* `dyn_rel_pos`: shape `(T, N, 3)` — agent position relative to the player (ENU)
+* `dyn_frame_time`: shape `(T,)` — Minetest gametime of each frame
+* `dyn_names`: shape `(N,)` — entity name of each agent slot
+* `dyn_num_agents`: scalar `N`
+* `dyn_entity_name`: scalar — the spawned entity id
+* `dyn_align_offset`: scalar — offset of the collected window within the raw log
+* `dyn_align_rmse`: scalar — RMSE of the `player_pos` alignment (sanity check)
