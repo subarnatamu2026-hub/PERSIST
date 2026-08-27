@@ -136,6 +136,11 @@ class Args:
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
 
+    clean_rgb: bool = True
+    """If True, hide the HUD (hotbar, health/breath bars, etc.) and the first-person
+    wielded hand/item from the RGB observation. Purely visual; does not change actions,
+    observations or the ground-truth data. Set to False to keep the default HUD."""
+
     collect_dynamic_data: bool = True
     """If True, spawn dynamic agents (mobs/animals) in Craftium and save their per-frame
     state to an extra `data_dynamic.npz` file alongside `data.npz` for each level."""
@@ -535,6 +540,8 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_enable": "true" if args.collect_dynamic_data else "false",
                 "dynamic_agents_count": args.num_dynamic_agents,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
+                # Hide HUD + first-person wielded hand/item from the RGB (visual only).
+                "clean_rgb": "true" if args.clean_rgb else "false",
             },
         )
         # mt_port should remain in the range [args.mt_port [default:49152], 65535]
