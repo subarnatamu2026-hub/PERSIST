@@ -132,3 +132,17 @@ Static per-slot metadata (for drawing the mesh body later):
 > (`.../mods/ENTITIES/mobs_mc/models` and `.../textures`); `dyn_mesh`/`dyn_textures`
 > name them so you can load and pose the model using `dyn_pos` + `dyn_rotation` +
 > `dyn_visual_size`.
+
+Player body (the player's **kinematics** — pos/vel/pitch/yaw/cam — are in
+`data.npz`; these fields add the player's mesh/box ground truth to match the agents):
+* `dyn_player_present`: shape `(T,)` `int8`
+* `dyn_player_pos`: shape `(T, 3)` — player world position (ENU), bottom-center (feet)
+* `dyn_player_rotation`: shape `(T, 3)` — `(pitch, yaw, roll)` radians, Minetest axes
+* `dyn_player_collisionbox`: shape `(T, 6)` — collision box relative to pos, Minetest axes
+* `dyn_player_obb_corners`: shape `(T, 8, 3)` — yaw-oriented box corners (ENU world)
+* `dyn_player_aabb_min` / `dyn_player_aabb_max`: shape `(T, 3)` — axis-aligned world box (ENU)
+* `dyn_player_mesh`: scalar object — player model file (e.g. `mcl_armor_character.b3d`)
+* `dyn_player_textures`: object — list of player textures (skin/armor)
+* `dyn_player_visual`: scalar object — visual type
+* `dyn_player_visual_size`: shape `(3,)` — model scale
+* `dyn_player_collisionbox_static`: shape `(6,)` — collision box at capture, Minetest axes

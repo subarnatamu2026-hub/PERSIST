@@ -266,6 +266,56 @@ def build_dynamic_arrays(
         "dyn_visual_size": visual_size,   # [N, 3] float32, model scale
         "dyn_collisionbox_static": static_cbox,  # [N, 6] float32, MT axes
     })
+
+    # ---- Player body (kinematics already live in data.npz; here we add the
+    # mesh/box ground truth to match the agents) ----
+    p_present = np.zeros((T,), dtype=np.int8)
+    p_pos_mt = np.zeros((T, 3), dtype=np.float64)
+    p_yaw = np.zeros((T,), dtype=np.float64)
+    p_rot = np.zeros((T, 3), dtype=np.float32)
+    p_cbox = np.zeros((T, 6), dtype=np.float64)
+    for t in range(T):
+        idx = offset + t
+        if idx >= len(frames):
+            break
+        pl = frames[idx].get("player")
+        if not pl or "pos" not in pl:
+            continue
+        p_present[t] = int(pl.get("present", 1))
+        p_pos_mt[t] = _xyz(pl["pos"])
+        p_yaw[t] = float(pl.get("yaw", 0.0))
+        if "rotation" in pl:
+            p_rot[t] = _xyz(pl["rotation"])
+        cb = pl.get("collisionbox")
+        if cb is not None and len(cb) == 6:
+            p_cbox[t] = cb
+
+    p_obb, p_amin, p_amax = _compute_boxes(
+        p_pos_mt[:, None, :], p_cbox[:, None, :], p_yaw[:, None]
+    )
+    out.update({
+        "dyn_player_present": p_present,                       # [T] int8
+        "dyn_player_pos": _to_enu(p_pos_mt).astype(np.float32),  # [T, 3] ENU (bottom-center)
+        "dyn_player_rotation": p_rot,                          # [T, 3] (pitch,yaw,roll) MT axes
+        "dyn_player_collisionbox": p_cbox.astype(np.float32),  # [T, 6] rel to pos, MT axes
+        "dyn_player_obb_corners": (p_obb[:, 0] * p_present[:, None, None]).astype(np.float32),  # [T,8,3] ENU
+        "dyn_player_aabb_min": (p_amin[:, 0] * p_present[:, None]).astype(np.float32),  # [T,3] ENU
+        "dyn_player_aabb_max": (p_amax[:, 0] * p_present[:, None]).astype(np.float32),  # [T,3] ENU
+    })
+
+    # Static player visual metadata (for drawing the player body/mesh later).
+    pm = (meta_rec or {}).get("player") or {}
+    pvs = pm.get("visual_size")
+    out.update({
+        "dyn_player_mesh": np.array(pm.get("mesh", "") or "", dtype=object),
+        "dyn_player_textures": np.array(pm.get("textures", []) or [], dtype=object),
+        "dyn_player_visual": np.array(pm.get("visual", "") or "", dtype=object),
+        "dyn_player_visual_size": np.array(
+            [pvs.get("x", 1.0), pvs.get("y", 1.0), pvs.get("z", 1.0)] if isinstance(pvs, dict)
+            else [1.0, 1.0, 1.0], dtype=np.float32),
+        "dyn_player_collisionbox_static": np.array(
+            pm.get("collisionbox", [0, 0, 0, 0, 0, 0]), dtype=np.float32),
+    })
     return out
 
 
