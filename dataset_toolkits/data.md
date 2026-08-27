@@ -93,15 +93,42 @@ and velocities use the same **ENU** convention as `player_pos` in `data.npz`.
 Agents keep a stable slot index `n` in `[0, N)`; when an agent is missing/dead in
 a frame its `dyn_present` entry is 0 and its other values are 0.
 
+Note on what `dyn_pos` means: mobs are **entities** (a rigged mesh + a collision
+box), not voxels — they never appear in `obs_voxel_mt`. `dyn_pos` is the entity
+origin, i.e. the **bottom-center (ground-contact) point** of the agent, not its
+head/tail/leg. Use `dyn_yaw`/`dyn_rotation` + the collision box for the body extent.
+
+Per-frame state:
 * `dyn_present`: shape `(T, N)` `int8` — 1 if agent `n` exists at frame `t`
-* `dyn_pos`: shape `(T, N, 3)` — agent world position (ENU)
+* `dyn_pos`: shape `(T, N, 3)` — agent world position (ENU), bottom-center
 * `dyn_vel`: shape `(T, N, 3)` — agent velocity (ENU)
 * `dyn_yaw`: shape `(T, N)` — agent yaw in radians (about the up axis)
+* `dyn_rotation`: shape `(T, N, 3)` — full rotation `(pitch, yaw, roll)` in radians, **Minetest axes** (not ENU-reindexed)
 * `dyn_hp`: shape `(T, N)` — agent health points
 * `dyn_rel_pos`: shape `(T, N, 3)` — agent position relative to the player (ENU)
+* `dyn_sheared`: shape `(T, N)` `int8` — mob state (sheep: sheared or not)
+* `dyn_baby`: shape `(T, N)` `int8` — mob state (baby/adult)
+* `dyn_color`: shape `(T, N)` object — wool/dye color where applicable
 * `dyn_frame_time`: shape `(T,)` — Minetest gametime of each frame
+
+Bounding-box ground truth (ENU world coordinates):
+* `dyn_collisionbox`: shape `(T, N, 6)` — collision box `(x1,y1,z1,x2,y2,z2)` relative to `dyn_pos`, **Minetest axes**
+* `dyn_obb_corners`: shape `(T, N, 8, 3)` — 8 corners of the yaw-oriented box (ENU world). Corner bit order: bit0→x2 else x1, bit1→y2 else y1, bit2→z2 else z1 (Minetest axes, before ENU reindex)
+* `dyn_aabb_min` / `dyn_aabb_max`: shape `(T, N, 3)` — axis-aligned world box (ENU)
+
+Static per-slot metadata (for drawing the mesh body later):
 * `dyn_names`: shape `(N,)` — entity name of each agent slot
+* `dyn_mesh`: shape `(N,)` object — model file name (e.g. `mobs_mc_sheep.b3d`)
+* `dyn_textures`: shape `(N,)` object — list of texture file names per slot
+* `dyn_visual`: shape `(N,)` object — visual type (e.g. `mesh`)
+* `dyn_visual_size`: shape `(N, 3)` — model scale
+* `dyn_collisionbox_static`: shape `(N, 6)` — collision box at spawn, Minetest axes
 * `dyn_num_agents`: scalar `N`
 * `dyn_entity_name`: scalar — the spawned entity id
 * `dyn_align_offset`: scalar — offset of the collected window within the raw log
 * `dyn_align_rmse`: scalar — RMSE of the `player_pos` alignment (sanity check)
+
+> The mesh/texture files themselves live in the VoxeLibre game assets
+> (`.../mods/ENTITIES/mobs_mc/models` and `.../textures`); `dyn_mesh`/`dyn_textures`
+> name them so you can load and pose the model using `dyn_pos` + `dyn_rotation` +
+> `dyn_visual_size`.
