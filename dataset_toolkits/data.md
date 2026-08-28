@@ -111,6 +111,15 @@ Per-frame state:
 * `dyn_color`: shape `(T, N)` object — wool/dye color where applicable
 * `dyn_frame_time`: shape `(T,)` — Minetest gametime of each frame
 
+Articulation / motion (which animation is playing + explicitly-posed bones; the
+full per-bone skeleton is NOT available from the engine):
+* `dyn_anim_range`: shape `(T, N, 2)` — active animation clip frame range `[start, end]` (indicates stand/walk/run/eat…)
+* `dyn_anim_speed`: shape `(T, N)` — animation playback speed
+* `dyn_bone_names`: shape `(B,)` object — names of bones that were explicitly posed (e.g. `head`); union across the episode
+* `dyn_bone_rot`: shape `(T, N, B, 3)` — per-frame rotation (radians) of each posed bone (e.g. sheep head swivel)
+* `dyn_bone_present`: shape `(T, N, B)` `int8` — 1 where that bone has an override that frame
+* `dyn_bone_rot_units`: scalar — `"radians"`
+
 Bounding-box ground truth (ENU world coordinates):
 * `dyn_collisionbox`: shape `(T, N, 6)` — collision box `(x1,y1,z1,x2,y2,z2)` relative to `dyn_pos`, **Minetest axes**
 * `dyn_obb_corners`: shape `(T, N, 8, 3)` — 8 corners of the yaw-oriented box (ENU world). Corner bit order: bit0→x2 else x1, bit1→y2 else y1, bit2→z2 else z1 (Minetest axes, before ENU reindex)
@@ -141,6 +150,11 @@ Player body (the player's **kinematics** — pos/vel/pitch/yaw/cam — are in
 * `dyn_player_collisionbox`: shape `(T, 6)` — collision box relative to pos, Minetest axes
 * `dyn_player_obb_corners`: shape `(T, 8, 3)` — yaw-oriented box corners (ENU world)
 * `dyn_player_aabb_min` / `dyn_player_aabb_max`: shape `(T, 3)` — axis-aligned world box (ENU)
+* `dyn_player_anim_range`: shape `(T, 2)` — active animation clip frame range (stand/walk/mine…)
+* `dyn_player_anim_speed`: shape `(T,)` — animation playback speed
+* `dyn_player_bone_names`: shape `(Bp,)` object — posed player bones (e.g. head/arm controls)
+* `dyn_player_bone_rot`: shape `(T, Bp, 3)` — per-frame bone rotation (radians)
+* `dyn_player_bone_present`: shape `(T, Bp)` `int8`
 * `dyn_player_mesh`: scalar object — player model file (e.g. `mcl_armor_character.b3d`)
 * `dyn_player_textures`: object — list of player textures (skin/armor)
 * `dyn_player_visual`: scalar object — visual type

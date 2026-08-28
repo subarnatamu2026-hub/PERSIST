@@ -75,6 +75,22 @@ def _to_enu(a: np.ndarray) -> np.ndarray:
     return a[..., _MT_TO_ENU]
 
 
+def _bone_union(frames, offset, T, per_agent):
+    """Collect the sorted union of overridden bone names across the window."""
+    names = set()
+    for t in range(T):
+        idx = offset + t
+        if idx >= len(frames):
+            break
+        if per_agent:
+            for agent in frames[idx].get("agents", []):
+                names.update((agent.get("bones") or {}).keys())
+        else:
+            pl = frames[idx].get("player") or {}
+            names.update((pl.get("bones") or {}).keys())
+    return sorted(names)
+
+
 def _compute_boxes(pos_mt: np.ndarray, cbox: np.ndarray, yaw: np.ndarray):
     """Compute bounding-box ground truth from Minetest-native quantities.
 
@@ -173,6 +189,8 @@ def build_dynamic_arrays(
     color[:] = ""
     frame_time = np.zeros((T,), dtype=np.float32)
     names = np.array([entity_name] * N, dtype=object)
+    anim_range = np.zeros((T, N, 2), dtype=np.float32)  # animation clip frame range
+    anim_speed = np.zeros((T, N), dtype=np.float32)     # animation playback speed
 
     for t in range(T):
         idx = offset + t
@@ -186,6 +204,11 @@ def build_dynamic_arrays(
                 continue
             present[t, slot] = int(agent.get("present", 0))
             if present[t, slot]:
+                an = agent.get("anim")
+                if an:
+                    r = an.get("range", {})
+                    anim_range[t, slot] = [r.get("x", 0.0), r.get("y", 0.0)]
+                    anim_speed[t, slot] = float(an.get("speed", 0.0))
                 p_mt = np.array(_xyz(agent["pos"]), dtype=np.float64)
                 pos_mt[t, slot] = p_mt
                 pos[t, slot] = p_mt[_MT_TO_ENU].astype(np.float32)
@@ -214,6 +237,30 @@ def build_dynamic_arrays(
     aabb_min = aabb_min * present[..., None]
     aabb_max = aabb_max * present[..., None]
 
+    # Per-frame bone overrides (articulation, e.g. head swivel). The set of
+    # posed bones is model-dependent, so take the union across all frames.
+    bone_names = _bone_union(frames, offset, T, per_agent=True)
+    B = len(bone_names)
+    bidx = {n: i for i, n in enumerate(bone_names)}
+    bone_rot = np.zeros((T, N, B, 3), dtype=np.float32)
+    bone_present = np.zeros((T, N, B), dtype=np.int8)
+    for t in range(T):
+        idx = offset + t
+        if idx >= len(frames):
+            break
+        for agent in frames[idx].get("agents", []):
+            slot = int(agent.get("slot", 0)) - 1
+            if slot < 0 or slot >= N:
+                continue
+            for name, brec in (agent.get("bones") or {}).items():
+                j = bidx.get(name)
+                if j is None:
+                    continue
+                rr = brec.get("rot")
+                if rr:
+                    bone_rot[t, slot, j] = [rr.get("x", 0.0), rr.get("y", 0.0), rr.get("z", 0.0)]
+                bone_present[t, slot, j] = 1
+
     out = {
         "dyn_present": present,          # [T, N] int8
         "dyn_pos": pos,                  # [T, N, 3] float32, ENU world coords (bottom-center)
@@ -229,6 +276,12 @@ def build_dynamic_arrays(
         "dyn_sheared": sheared,          # [T, N] int8 (mob state)
         "dyn_baby": baby,                # [T, N] int8 (mob state)
         "dyn_color": color,              # [T, N] object (wool/dye color where applicable)
+        "dyn_anim_range": anim_range,    # [T, N, 2] float32, active animation clip frame range
+        "dyn_anim_speed": anim_speed,    # [T, N] float32, animation playback speed
+        "dyn_bone_names": np.array(bone_names, dtype=object),  # [B] posed bone names
+        "dyn_bone_rot": bone_rot,        # [T, N, B, 3] float32, bone rotation (radians)
+        "dyn_bone_present": bone_present, # [T, N, B] int8, 1 where that bone is posed
+        "dyn_bone_rot_units": np.array("radians", dtype=object),
         "dyn_names": names,              # [N] object (entity names)
         "dyn_frame_time": frame_time,    # [T] float32, minetest gametime
         "dyn_num_agents": np.array(N, dtype=np.int32),
@@ -274,6 +327,13 @@ def build_dynamic_arrays(
     p_yaw = np.zeros((T,), dtype=np.float64)
     p_rot = np.zeros((T, 3), dtype=np.float32)
     p_cbox = np.zeros((T, 6), dtype=np.float64)
+    p_anim_range = np.zeros((T, 2), dtype=np.float32)
+    p_anim_speed = np.zeros((T,), dtype=np.float32)
+    p_bone_names = _bone_union(frames, offset, T, per_agent=False)
+    Bp = len(p_bone_names)
+    pbidx = {n: i for i, n in enumerate(p_bone_names)}
+    p_bone_rot = np.zeros((T, Bp, 3), dtype=np.float32)
+    p_bone_present = np.zeros((T, Bp), dtype=np.int8)
     for t in range(T):
         idx = offset + t
         if idx >= len(frames):
@@ -289,6 +349,19 @@ def build_dynamic_arrays(
         cb = pl.get("collisionbox")
         if cb is not None and len(cb) == 6:
             p_cbox[t] = cb
+        an = pl.get("anim")
+        if an:
+            r = an.get("range", {})
+            p_anim_range[t] = [r.get("x", 0.0), r.get("y", 0.0)]
+            p_anim_speed[t] = float(an.get("speed", 0.0))
+        for name, brec in (pl.get("bones") or {}).items():
+            j = pbidx.get(name)
+            if j is None:
+                continue
+            rr = brec.get("rot")
+            if rr:
+                p_bone_rot[t, j] = [rr.get("x", 0.0), rr.get("y", 0.0), rr.get("z", 0.0)]
+            p_bone_present[t, j] = 1
 
     p_obb, p_amin, p_amax = _compute_boxes(
         p_pos_mt[:, None, :], p_cbox[:, None, :], p_yaw[:, None]
@@ -301,6 +374,11 @@ def build_dynamic_arrays(
         "dyn_player_obb_corners": (p_obb[:, 0] * p_present[:, None, None]).astype(np.float32),  # [T,8,3] ENU
         "dyn_player_aabb_min": (p_amin[:, 0] * p_present[:, None]).astype(np.float32),  # [T,3] ENU
         "dyn_player_aabb_max": (p_amax[:, 0] * p_present[:, None]).astype(np.float32),  # [T,3] ENU
+        "dyn_player_anim_range": p_anim_range,   # [T,2] active animation clip frame range
+        "dyn_player_anim_speed": p_anim_speed,   # [T] animation playback speed
+        "dyn_player_bone_names": np.array(p_bone_names, dtype=object),  # [Bp]
+        "dyn_player_bone_rot": p_bone_rot,       # [T, Bp, 3] float32, bone rotation (radians)
+        "dyn_player_bone_present": p_bone_present, # [T, Bp] int8
     })
 
     # Static player visual metadata (for drawing the player body/mesh later).
