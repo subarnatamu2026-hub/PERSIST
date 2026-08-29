@@ -146,10 +146,30 @@ class Args:
     state to an extra `data_dynamic.npz` file alongside `data.npz` for each level."""
 
     num_dynamic_agents: int = 10
-    """Number of dynamic agents (e.g. sheep) to spawn around the player."""
+    """Number of dynamic agents to spawn (used when min==max). Superseded by the
+    min/max range below when they differ."""
+
+    num_dynamic_agents_min: int = 10
+    """Minimum number of dynamic agents per level (randomized per level)."""
+
+    num_dynamic_agents_max: int = 20
+    """Maximum number of dynamic agents per level (randomized per level). Each level
+    picks a random count in [min, max], seeded by the level seed."""
 
     dynamic_agent_entity: str = "mobs_mc:sheep"
-    """Entity name of the dynamic agents to spawn (VoxeLibre entity id)."""
+    """Single entity id, used only if `dynamic_agent_entities` is empty."""
+
+    dynamic_agent_entities: str = (
+        "mobs_mc:sheep,mobs_mc:cow,mobs_mc:pig,mobs_mc:chicken,"
+        "mobs_mc:rabbit,mobs_mc:mooshroom,mobs_mc:horse,mobs_mc:llama"
+    )
+    """Comma-separated VoxeLibre entity ids to mix. Each agent slot is randomly
+    assigned one of these per level (seeded), so datasets contain varied animals.
+    Adjust to whatever passive mobs your VoxeLibre build provides."""
+
+    spawn_on_land: bool = True
+    """If True, relocate the player onto dry, solid ground at episode start so it
+    does not spawn in a water body (and jump in place). Terrain-only navigation."""
 
 
 def make_env(craftium_kwargs, mt_port_offset):
@@ -539,9 +559,14 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 # Written to minetest.conf and read by the craftium_env mod.
                 "dynamic_agents_enable": "true" if args.collect_dynamic_data else "false",
                 "dynamic_agents_count": args.num_dynamic_agents,
+                "dynamic_agents_count_min": args.num_dynamic_agents_min,
+                "dynamic_agents_count_max": args.num_dynamic_agents_max,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
+                "dynamic_agents_entities": args.dynamic_agent_entities,
                 # Hide HUD + first-person wielded hand/item from the RGB (visual only).
                 "clean_rgb": "true" if args.clean_rgb else "false",
+                # Relocate the player onto dry land at spawn (terrain-only).
+                "spawn_on_land": "true" if args.spawn_on_land else "false",
             },
         )
         # mt_port should remain in the range [args.mt_port [default:49152], 65535]
@@ -667,7 +692,7 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                     dyn = collect_dynamic_data(
                         env.unwrapped.mt.run_dir,
                         level_data["player_pos"],
-                        num_agents=args.num_dynamic_agents,
+                        num_agents=None,  # auto-detect (count is randomized per level)
                         entity_name=args.dynamic_agent_entity,
                     )
                     if dyn is not None:
