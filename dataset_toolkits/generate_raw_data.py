@@ -160,12 +160,28 @@ class Args:
     """Single entity id, used only if `dynamic_agent_entities` is empty."""
 
     dynamic_agent_entities: str = (
+        # Passive land animals
         "mobs_mc:sheep,mobs_mc:cow,mobs_mc:pig,mobs_mc:chicken,"
-        "mobs_mc:rabbit,mobs_mc:mooshroom,mobs_mc:horse,mobs_mc:llama"
+        "mobs_mc:rabbit,mobs_mc:mooshroom,mobs_mc:horse,mobs_mc:llama,"
+        "mobs_mc:fox,mobs_mc:wolf,mobs_mc:ocelot,mobs_mc:cat,mobs_mc:panda,"
+        "mobs_mc:goat,mobs_mc:polar_bear,"
+        # Hostile *bodies*, neutralized to wander like animals (no attacking)
+        "mobs_mc:zombie,mobs_mc:husk,mobs_mc:skeleton,mobs_mc:stray,"
+        "mobs_mc:creeper,mobs_mc:spider,mobs_mc:cave_spider,mobs_mc:enderman,"
+        "mobs_mc:zombie_villager,mobs_mc:wither_skeleton,mobs_mc:pillager,"
+        "mobs_mc:vindicator,mobs_mc:witch,mobs_mc:zombified_piglin"
     )
     """Comma-separated VoxeLibre entity ids to mix. Each agent slot is randomly
-    assigned one of these per level (seeded), so datasets contain varied animals.
-    Adjust to whatever passive mobs your VoxeLibre build provides."""
+    assigned one of these per level (seeded). Land mobs only (no water/flying mobs).
+    Hostile bodies are included but are neutralized (see --neutralize_agents) so they
+    wander like animals instead of attacking. Any id your build lacks simply doesn't
+    spawn (its slots stay absent). Adjust to what your VoxeLibre build provides."""
+
+    neutralize_agents: bool = True
+    """If True, every spawned mob (including hostile species) is reconfigured to
+    behave like a passive land animal: no attacking/chasing, no self-destruct, and
+    no death from sunlight/fire/water - it just wanders. Uses the hostile mesh/body
+    but animal behavior. Set False to keep each mob's native AI."""
 
     spawn_on_land: bool = True
     """If True, relocate the player onto dry, solid ground at episode start so it
@@ -563,6 +579,8 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_count_max": args.num_dynamic_agents_max,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
                 "dynamic_agents_entities": args.dynamic_agent_entities,
+                # Make hostile mobs wander like animals (no attacking).
+                "dynamic_agents_neutral": "true" if args.neutralize_agents else "false",
                 # Hide HUD + first-person wielded hand/item from the RGB (visual only).
                 "clean_rgb": "true" if args.clean_rgb else "false",
                 # Relocate the player onto dry land at spawn (terrain-only).
