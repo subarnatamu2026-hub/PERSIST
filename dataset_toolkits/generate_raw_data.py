@@ -187,6 +187,11 @@ class Args:
     """If True, relocate the player onto dry, solid ground at episode start so it
     does not spawn in a water body (and jump in place). Terrain-only navigation."""
 
+    keep_on_land: bool = True
+    """If True, keep the player on dry land for the WHOLE episode: any step onto or
+    into water is undone by snapping it back to the last solid-ground spot (an
+    invisible wall at the water's edge). Normal walking/jumping on land is untouched."""
+
 
 def make_env(craftium_kwargs, mt_port_offset):
     (
@@ -585,6 +590,8 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "clean_rgb": "true" if args.clean_rgb else "false",
                 # Relocate the player onto dry land at spawn (terrain-only).
                 "spawn_on_land": "true" if args.spawn_on_land else "false",
+                # Keep the player on dry land for the whole episode.
+                "keep_player_on_land": "true" if args.keep_on_land else "false",
             },
         )
         # mt_port should remain in the range [args.mt_port [default:49152], 65535]
