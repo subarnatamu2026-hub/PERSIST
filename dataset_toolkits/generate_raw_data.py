@@ -160,22 +160,30 @@ class Args:
     """Single entity id, used only if `dynamic_agent_entities` is empty."""
 
     dynamic_agent_entities: str = (
-        # Passive land animals
-        "mobs_mc:sheep,mobs_mc:cow,mobs_mc:pig,mobs_mc:chicken,"
-        "mobs_mc:rabbit,mobs_mc:mooshroom,mobs_mc:horse,mobs_mc:llama,"
-        "mobs_mc:fox,mobs_mc:wolf,mobs_mc:ocelot,mobs_mc:cat,mobs_mc:panda,"
-        "mobs_mc:goat,mobs_mc:polar_bear,"
-        # Hostile *bodies*, neutralized to wander like animals (no attacking)
-        "mobs_mc:zombie,mobs_mc:husk,mobs_mc:skeleton,mobs_mc:stray,"
-        "mobs_mc:creeper,mobs_mc:spider,mobs_mc:cave_spider,mobs_mc:enderman,"
-        "mobs_mc:zombie_villager,mobs_mc:wither_skeleton,mobs_mc:pillager,"
-        "mobs_mc:vindicator,mobs_mc:witch,mobs_mc:zombified_piglin"
+        # Passive / neutral land animals
+        "mobs_mc:sheep,mobs_mc:cow,mobs_mc:pig,mobs_mc:chicken,mobs_mc:rabbit,"
+        "mobs_mc:mooshroom,mobs_mc:horse,mobs_mc:donkey,mobs_mc:mule,mobs_mc:llama,"
+        "mobs_mc:wolf,mobs_mc:dog,mobs_mc:cat,mobs_mc:ocelot,mobs_mc:polar_bear,"
+        "mobs_mc:killer_bunny,mobs_mc:skeleton_horse,mobs_mc:zombie_horse,"
+        "mobs_mc:iron_golem,mobs_mc:snowman,mobs_mc:villager,"
+        # Hostile *bodies*, neutralized to wander like animals (no attacking, no HP loss)
+        "mobs_mc:zombie,mobs_mc:baby_zombie,mobs_mc:husk,mobs_mc:baby_husk,"
+        "mobs_mc:skeleton,mobs_mc:stray,mobs_mc:witherskeleton,mobs_mc:silverfish,"
+        "mobs_mc:endermite,mobs_mc:spider,mobs_mc:cave_spider,mobs_mc:villager_zombie,"
+        "mobs_mc:zombified_piglin,mobs_mc:baby_zombified_piglin,mobs_mc:pigman,"
+        "mobs_mc:baby_pigman,mobs_mc:piglin,mobs_mc:piglin_brute,mobs_mc:sword_piglin,"
+        "mobs_mc:hoglin,mobs_mc:baby_hoglin,mobs_mc:zoglin,mobs_mc:vindicator,"
+        "mobs_mc:pillager,mobs_mc:slime_big,mobs_mc:slime_small,mobs_mc:slime_tiny,"
+        "mobs_mc:magma_cube_big,mobs_mc:magma_cube_small,mobs_mc:magma_cube_tiny"
     )
     """Comma-separated VoxeLibre entity ids to mix. Each agent slot is randomly
-    assigned one of these per level (seeded). Land mobs only (no water/flying mobs).
-    Hostile bodies are included but are neutralized (see --neutralize_agents) so they
-    wander like animals instead of attacking. Any id your build lacks simply doesn't
-    spawn (its slots stay absent). Adjust to what your VoxeLibre build provides."""
+    assigned one of these per level (seeded). This default is a LAND-only set curated
+    from a VoxeLibre build's registered mobs: passive animals plus hostile bodies that
+    are neutralized (see --neutralize_agents) to wander with no attacking and no HP
+    loss. Excluded on purpose: water mobs, flyers (bat/parrot/blaze/ghast/vex), bosses
+    (enderdragon/wither), lava striders, wall-mounted shulkers, summoners/casters
+    (evoker/illusioner/witch) and creeper-type stalkers. Any id your build lacks is
+    filtered out automatically. Adjust freely to your build's ids."""
 
     neutralize_agents: bool = True
     """If True, every spawned mob (including hostile species) is reconfigured to
