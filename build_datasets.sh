@@ -9,12 +9,14 @@ set -e
 cd ~/PERSIST
 source .venv/bin/activate
 
-FRAMES=600
+FRAMES="${FRAMES:-600}"
 ENV=OpenWorldCreative-v0
 
-TRAIN_NAME=train_1k;  TRAIN_N=1000; TRAIN_SEED=1
-EVAL1_NAME=eval1;     EVAL1_N=140;  EVAL1_SEED=2
-EVAL2_NAME=eval2;     EVAL2_N=60;   EVAL2_SEED=3
+# Sizes are overridable via env vars for quick tests, e.g.:
+#   TRAIN_N=4 EVAL1_N=2 EVAL2_N=2 ./build_datasets.sh
+TRAIN_NAME="${TRAIN_NAME:-train_1k}";  TRAIN_N="${TRAIN_N:-1000}"; TRAIN_SEED="${TRAIN_SEED:-1}"
+EVAL1_NAME="${EVAL1_NAME:-eval1}";     EVAL1_N="${EVAL1_N:-140}";  EVAL1_SEED="${EVAL1_SEED:-2}"
+EVAL2_NAME="${EVAL2_NAME:-eval2}";     EVAL2_N="${EVAL2_N:-60}";   EVAL2_SEED="${EVAL2_SEED:-3}"
 
 # 1) Deterministic 70/30 split of the agent pool (writes datasets/agent_split/*.txt)
 python tools/agent_splits.py --seen_ratio 0.7 --seed 0 --out_dir datasets/agent_split
