@@ -165,6 +165,15 @@ class Args:
     player and are all observed within the 600-frame episode. Set to 0 to let mobs
     wander freely."""
 
+    dynamic_agents_min_radius: float = 4.0
+    """Inner radius of the ring mobs are (re)spawned into around the player."""
+
+    dynamic_agents_max_radius: float = 6.0
+    """Outer radius of the (re)spawn ring. Kept strictly inside the leash radius so a
+    relocated mob is never immediately outside the leash again (which would teleport
+    it every frame -> visible jitter). Config-driven so it works without touching the
+    Lua mod."""
+
     dynamic_agent_entity: str = "mobs_mc:sheep"
     """Single entity id, used only if `dynamic_agent_entities` is empty."""
 
@@ -600,6 +609,8 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_count_min": args.num_dynamic_agents_min,
                 "dynamic_agents_count_max": args.num_dynamic_agents_max,
                 "dynamic_agents_leash_radius": args.dynamic_agents_leash_radius,
+                "dynamic_agents_min_radius": args.dynamic_agents_min_radius,
+                "dynamic_agents_max_radius": args.dynamic_agents_max_radius,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
                 "dynamic_agents_entities": args.dynamic_agent_entities,
                 # Make hostile mobs wander like animals (no attacking).
