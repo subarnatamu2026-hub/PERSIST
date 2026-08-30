@@ -4,7 +4,10 @@
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y \
+# apt in an unprivileged (rootless) container can't drop to the _apt user, which
+# breaks its download method. Disable the apt sandbox so it runs as-is.
+RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/00no-sandbox \
+ && apt-get update && apt-get install -y \
         g++ make libc6-dev cmake fontconfig libpng-dev libjpeg-dev \
         libgl1-mesa-dev libgles2-mesa-dev libsqlite3-dev libglfw3-dev \
         libogg-dev libvorbis-dev libopenal-dev libcurl4-gnutls-dev \

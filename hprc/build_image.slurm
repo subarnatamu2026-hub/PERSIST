@@ -17,6 +17,8 @@ module load WebProxy 2>/dev/null || true            # outbound internet for apt/
 export CH_IMAGE_STORAGE="${CH_IMAGE_STORAGE:-$SCRATCH/ch-storage}"
 cd "$SCRATCH/PERSIST"
 
-ch-image build -t craftium -f hprc/Dockerfile hprc
+# --force lets ch-image emulate the privileged operations distro package
+# managers (apt) expect inside an unprivileged build.
+ch-image build --force -t craftium -f hprc/Dockerfile hprc
 ch-convert craftium "${CH_IMAGE:-$SCRATCH/craftium.sqfs}"
 echo "Built ${CH_IMAGE:-$SCRATCH/craftium.sqfs}"
