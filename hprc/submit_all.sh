@@ -5,15 +5,15 @@
 #   setup (build venv)  ->  prepare (split + init)  ->  3 generation arrays
 #
 # Usage (from $SCRATCH/PERSIST):
-#   ACCOUNT=<your_acct> PARTITION=<cpu_partition> ./hprc/submit_all.sh
+#   ACCOUNT=<your_acct> PARTITION=medium ./hprc/submit_all.sh
 # Optional overrides: WS_TRAIN, WS_EVAL1, WS_EVAL2 (array widths = worker counts).
-#   Find your account with `myproject` (HPRC); Grace CPU partition is usually `cpu`.
+#   Find your account with `myproject` (HPRC); Grace has time-named partitions: use `medium` (1 day) or `long` (7 days), not `cpu`.
 set -e
 cd "$SCRATCH/PERSIST"
 mkdir -p logs datasets
 
 ACCOUNT="${ACCOUNT:?set ACCOUNT (see: myproject)}"
-PARTITION="${PARTITION:?set PARTITION (e.g. cpu)}"
+PARTITION="${PARTITION:?set PARTITION (Grace: medium or long; NOT cpu)}"
 WS_TRAIN="${WS_TRAIN:-32}"
 WS_EVAL1="${WS_EVAL1:-16}"
 WS_EVAL2="${WS_EVAL2:-8}"
