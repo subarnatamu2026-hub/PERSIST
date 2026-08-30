@@ -156,6 +156,11 @@ class Args:
     """Maximum number of dynamic agents per level (randomized per level). Each level
     picks a random count in [min, max], seeded by the level seed."""
 
+    dynamic_agents_leash_radius: float = 12.0
+    """Keep mobs within this horizontal distance of the player (mobs that stray
+    beyond it are relocated back near the player) so they stay observable within the
+    600-frame episode. Set to 0 to let mobs wander freely."""
+
     dynamic_agent_entity: str = "mobs_mc:sheep"
     """Single entity id, used only if `dynamic_agent_entities` is empty."""
 
@@ -590,6 +595,7 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_count": args.num_dynamic_agents,
                 "dynamic_agents_count_min": args.num_dynamic_agents_min,
                 "dynamic_agents_count_max": args.num_dynamic_agents_max,
+                "dynamic_agents_leash_radius": args.dynamic_agents_leash_radius,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
                 "dynamic_agents_entities": args.dynamic_agent_entities,
                 # Make hostile mobs wander like animals (no attacking).
