@@ -30,7 +30,7 @@ run_group () {  # name  num_levels  seed  entities
   echo "==================================================================="
   uv run python dataset_toolkits/generate_raw_data.py \
     --dataset_dir datasets --dataset_name "$NAME" --env_id "$ENV" \
-    --ep_timesteps "$FRAMES" --seed "$SEED" --init --num_levels "$N" \
+    --ep_timesteps "$FRAMES" --seed "$SEED" --init --overwrite_init --num_levels "$N" \
     --dynamic_agent_entities "$ENTS"
   uv run python dataset_toolkits/generate_raw_data.py \
     --dataset_dir datasets --dataset_name "$NAME" --env_id "$ENV" \
