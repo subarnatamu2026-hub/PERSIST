@@ -7,8 +7,11 @@ slice of the dataset's level seeds, so terrains never overlap between workers.
 Everything lives in **`$SCRATCH`** (`/scratch/user/subarna_tamu.2026`).
 
 > These are templates. Cluster-specific bits you must fill: the `--account` and
-> `--partition` in `generate_array.slurm`, and the exact Apptainer module name
-> (`module spider apptainer`). Never run heavy work on the login node.
+> `--partition` in `generate_array.slurm`. Never run heavy work on the login node.
+>
+> **On Grace the container tool is `singularity`** (already on PATH at
+> `/usr/bin/singularity`; no `module load` needed). Everywhere below that says
+> `apptainer`, use `singularity` with the same arguments.
 
 ## 0. Connect with MobaXterm
 - Session → SSH. Remote host: `grace.hprc.tamu.edu` (or `faster.hprc.tamu.edu`).
@@ -33,13 +36,21 @@ cd $SCRATCH/PERSIST
 ```
 
 ## 2. Build the container (system deps) — once
+On Grace (login node has direct internet):
 ```bash
-module load Apptainer            # or: module spider apptainer  (use the real name)
-apptainer build $SCRATCH/craftium.sif hprc/craftium.def
+cd $SCRATCH/PERSIST
+singularity build --fakeroot $SCRATCH/craftium.sif hprc/craftium.def
 ```
-If the build node forbids `apptainer build`, request a short interactive job first
-(`srun --time=01:00:00 --mem=8G --cpus-per-task=4 --pty bash`) and build there, or
-use `apptainer build --fakeroot`.
+If Grace refuses `--fakeroot` (most HPRC sites disable user fakeroot), build the
+image on a machine where you have root — e.g. your WSL laptop, which already has a
+working setup — and copy it over:
+```bash
+# on WSL:
+sudo apt install -y apptainer
+cd ~/PERSIST && apptainer build --fakeroot craftium.sif hprc/craftium.def
+scp craftium.sif subarna_tamu.2026@grace.hprc.tamu.edu:/scratch/user/subarna_tamu.2026/
+```
+(or drag `craftium.sif` into `/scratch/user/subarna_tamu.2026/` via MobaXterm's SFTP panel).
 
 ## 3. Build the Python env (torch + craftium) — once
 Compiles Minetest into `$SCRATCH/PERSIST/.venv`. Do it in an interactive job:
