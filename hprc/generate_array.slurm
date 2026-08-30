@@ -20,6 +20,8 @@
 
 set -e
 mkdir -p logs
+CONTAINER="${CONTAINER:-singularity}"
+[ -n "${CONTAINER_MODULE:-}" ] && module load "$CONTAINER_MODULE" || true
 
 SIF="${SIF:-$SCRATCH/craftium.sif}"
 WORLD_SIZE="${WORLD_SIZE:?set WORLD_SIZE (must equal the array size)}"
@@ -39,7 +41,7 @@ fi
 RANK="${SLURM_ARRAY_TASK_ID}"
 PORT=$((30000 + RANK * 4))   # unique Minetest port per worker (Xvfb display is 99+rank in code)
 
-singularity exec --bind /scratch "$SIF" bash -lc "
+"$CONTAINER" exec --bind /scratch "$SIF" bash -lc "
   set -e
   cd '$SCRATCH/PERSIST' && source .venv/bin/activate
   ENTS=\$(cat '$ENTS_FILE')

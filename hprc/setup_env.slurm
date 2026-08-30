@@ -15,7 +15,9 @@
 
 set -e
 mkdir -p logs
+CONTAINER="${CONTAINER:-singularity}"
+[ -n "${CONTAINER_MODULE:-}" ] && module load "$CONTAINER_MODULE" || true
 module load WebProxy 2>/dev/null || true   # outbound internet for uv/pip downloads
 SIF="${SIF:-$SCRATCH/craftium.sif}"
 cd "$SCRATCH/PERSIST"
-singularity exec --bind /scratch "$SIF" bash hprc/setup_env.sh
+"$CONTAINER" exec --bind /scratch "$SIF" bash hprc/setup_env.sh
