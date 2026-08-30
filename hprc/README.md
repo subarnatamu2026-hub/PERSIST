@@ -55,6 +55,29 @@ scp craftium.sif subarna_tamu.2026@grace.hprc.tamu.edu:/scratch/user/subarna_tam
 ```
 (or drag `craftium.sif` into `/scratch/user/subarna_tamu.2026/` via MobaXterm's SFTP panel).
 
+## RECOMMENDED: run everything detached (survives logout / laptop close)
+Interactive `srun --pty` sessions DIE when you disconnect. Instead submit the
+whole pipeline as dependency-chained **batch** jobs and walk away. After the
+container `.sif` is in `$SCRATCH` (steps 1-2), just run:
+```bash
+cd $SCRATCH/PERSIST
+ACCOUNT=<your_account> PARTITION=cpu ./hprc/submit_all.sh
+# find your account with:  myproject
+```
+This queues: **setup** (build venv) -> **prepare** (split + init) -> **3 generation
+arrays** (train_1k / eval1 / eval2), each starting only after the previous
+finishes. You can log out immediately. Monitor / manage anytime with:
+```bash
+squeue -u $USER            # what's running/queued
+tail -f logs/craftium-*_*.out
+scancel -u $USER           # cancel everything if needed
+```
+Tune worker counts with `WS_TRAIN`/`WS_EVAL1`/`WS_EVAL2` (they set the array
+widths), e.g. `WS_TRAIN=64 ACCOUNT=... PARTITION=cpu ./hprc/submit_all.sh`.
+
+Steps 3-6 below are the manual, step-by-step equivalents if you prefer to run
+each phase yourself.
+
 ## 3. Build the Python env (torch + craftium) — once
 Compiles Minetest into `$SCRATCH/PERSIST/.venv`. Do it in an interactive job.
 `WebProxy` gives the compute node outbound internet (Singularity passes it into
