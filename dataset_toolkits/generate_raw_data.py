@@ -145,6 +145,13 @@ class Args:
     """If True, spawn dynamic agents (mobs/animals) in Craftium and save their per-frame
     state to an extra `data_dynamic.npz` file alongside `data.npz` for each level."""
 
+    disable_world_mob_spawning: bool = True
+    """If True, disable VoxeLibre's own natural mob-spawning system (mobs_spawn=false)
+    so the ONLY mobs in the world are the fixed set our craftium_env mod places. Without
+    this the game keeps spawning ambient animals/monsters all over the terrain, flooding
+    the scene with far more than the intended count. Our mod uses direct add_entity, which
+    is unaffected by this setting."""
+
     num_dynamic_agents: int = 10
     """Number of dynamic agents to spawn (used when min==max). Superseded by the
     min/max range below when they differ."""
@@ -610,6 +617,11 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "mono_font_size": 5,
                 "font_shadow": False,
                 "repeat_place_time": 0.16,
+                # Disable VoxeLibre's ambient mob spawner so only our controlled
+                # set of mobs exists (our mod uses add_entity, unaffected by this).
+                "mobs_spawn": "false" if args.disable_world_mob_spawning else "true",
+                # Belt-and-suspenders: our mod also removes any mob it didn't spawn.
+                "dynamic_agents_cull_wild": "true" if args.disable_world_mob_spawning else "false",
                 # Dynamic-agent (mobs/animals) spawning + logging in Craftium.
                 # Written to minetest.conf and read by the craftium_env mod.
                 "dynamic_agents_enable": "true" if args.collect_dynamic_data else "false",
