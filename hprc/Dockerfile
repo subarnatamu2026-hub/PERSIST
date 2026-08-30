@@ -25,4 +25,8 @@ RUN cd /tmp && git clone https://github.com/libsdl-org/SDL.git SDL2 && cd SDL2 \
 # uv (Python/deps manager).
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
+# Bind mount points must exist in the (read-only) image so ch-run doesn't try to
+# mkdir them at runtime (fails on FASTER). /tmp already exists in the base image.
+RUN mkdir -p /scratch
+
 ENV PATH=/usr/local/bin:$PATH LC_ALL=C

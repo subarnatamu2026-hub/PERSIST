@@ -15,9 +15,11 @@ ctr_exec () {
   case "${CONTAINER_KIND:-singularity}" in
     charliecloud|ch|ch-run)
       mkdir -p "$SCRATCH/tmp" "$SCRATCH/.cache"
-      # Charliecloud keeps the host env; point HOME/TMPDIR/caches at scratch so
-      # nothing tries to write to a non-existent in-container home.
-      ch-run -w -b /scratch "${CH_IMAGE:-$SCRATCH/craftium.sqfs}" -- \
+      # Read-only image (no -w). Don't bind host $HOME (--no-home); bind /scratch
+      # (mount point baked into the image) and a writable /tmp from scratch.
+      # HOME/TMPDIR/caches point at scratch so writes land on the bound fs.
+      ch-run --no-home -b /scratch -b "$SCRATCH/tmp:/tmp" \
+        "${CH_IMAGE:-$SCRATCH/craftium.sqfs}" -- \
         bash -lc "export HOME='$SCRATCH' TMPDIR='$SCRATCH/tmp' XDG_CACHE_HOME='$SCRATCH/.cache'; $cmd"
       ;;
     *)
