@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build the full dataset suite:
-#   - train  : 1000 levels, agents drawn from the SEEN (70%) pool
-#   - eval1   : 140 levels,  agents from the SEEN pool     (in-distribution)
-#   - eval2   : 60 levels,   agents from the UNSEEN (30%) pool (zero-shot)
+#   - train  : 100 levels, agents drawn from the SEEN (70%) pool
+#   - eval1   : 28 levels,  agents from the SEEN pool     (in-distribution)
+#   - eval2   : 12 levels,  agents from the UNSEEN (30%) pool (zero-shot)
 # Each level uses a distinct seed -> distinct terrain; the three groups use
 # different base seeds so their terrains don't overlap. 600 frames each.
 set -e
@@ -14,9 +14,9 @@ ENV=OpenWorldCreative-v0
 
 # Sizes are overridable via env vars for quick tests, e.g.:
 #   TRAIN_N=4 EVAL1_N=2 EVAL2_N=2 ./build_datasets.sh
-TRAIN_NAME="${TRAIN_NAME:-train_1k}";  TRAIN_N="${TRAIN_N:-1000}"; TRAIN_SEED="${TRAIN_SEED:-1}"
-EVAL1_NAME="${EVAL1_NAME:-eval1}";     EVAL1_N="${EVAL1_N:-140}";  EVAL1_SEED="${EVAL1_SEED:-2}"
-EVAL2_NAME="${EVAL2_NAME:-eval2}";     EVAL2_N="${EVAL2_N:-60}";   EVAL2_SEED="${EVAL2_SEED:-3}"
+TRAIN_NAME="${TRAIN_NAME:-train}";  TRAIN_N="${TRAIN_N:-100}"; TRAIN_SEED="${TRAIN_SEED:-1}"
+EVAL1_NAME="${EVAL1_NAME:-eval1}";  EVAL1_N="${EVAL1_N:-28}";  EVAL1_SEED="${EVAL1_SEED:-2}"
+EVAL2_NAME="${EVAL2_NAME:-eval2}";  EVAL2_N="${EVAL2_N:-12}";  EVAL2_SEED="${EVAL2_SEED:-3}"
 
 # 1) Deterministic 70/30 split of the agent pool (writes datasets/agent_split/*.txt)
 python tools/agent_splits.py --seen_ratio 0.7 --seed 0 --out_dir datasets/agent_split

@@ -152,14 +152,18 @@ class Args:
     num_dynamic_agents_min: int = 10
     """Minimum number of dynamic agents per level (randomized per level)."""
 
-    num_dynamic_agents_max: int = 20
+    num_dynamic_agents_max: int = 10
     """Maximum number of dynamic agents per level (randomized per level). Each level
-    picks a random count in [min, max], seeded by the level seed."""
+    picks a random count in [min, max], seeded by the level seed. Set equal to the
+    min (default 10) to spawn exactly that many agents in every level; the *mix* of
+    species still varies per level because each slot draws a random entity from the
+    seen/unseen list."""
 
-    dynamic_agents_leash_radius: float = 12.0
+    dynamic_agents_leash_radius: float = 8.0
     """Keep mobs within this horizontal distance of the player (mobs that stray
-    beyond it are relocated back near the player) so they stay observable within the
-    600-frame episode. Set to 0 to let mobs wander freely."""
+    beyond it are relocated back near the player) so they stay clustered around the
+    player and are all observed within the 600-frame episode. Set to 0 to let mobs
+    wander freely."""
 
     dynamic_agent_entity: str = "mobs_mc:sheep"
     """Single entity id, used only if `dynamic_agent_entities` is empty."""

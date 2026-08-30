@@ -79,15 +79,24 @@ ACCOUNT=<your_account> PARTITION=cpu ./hprc/submit_all.sh
 # find your account with:  myproject
 ```
 This queues: **setup** (build venv) -> **prepare** (split + init) -> **3 generation
-arrays** (train_1k / eval1 / eval2), each starting only after the previous
-finishes. You can log out immediately. Monitor / manage anytime with:
+arrays** (train / eval1 / eval2), each starting only after the previous
+finishes. Default sizes: **train 100, eval1 28 (seen), eval2 12 (unseen)**, each
+level with **exactly 10 mobs** (mixed species) over 600 frames. You can log out
+immediately. Monitor / manage anytime with:
 ```bash
 squeue -u $USER            # what's running/queued
 tail -f logs/craftium-*_*.out
 scancel -u $USER           # cancel everything if needed
 ```
-Tune worker counts with `WS_TRAIN`/`WS_EVAL1`/`WS_EVAL2` (they set the array
-widths), e.g. `WS_TRAIN=64 ACCOUNT=... PARTITION=cpu ./hprc/submit_all.sh`.
+Tune worker counts with `WS_TRAIN`/`WS_EVAL1`/`WS_EVAL2` (array widths) and sizes
+with `TRAIN_N`/`EVAL1_N`/`EVAL2_N`.
+
+**Smoke test first (recommended):** generate just 2 levels per dataset to eyeball
+the video + `data_dynamic` before the full run:
+```bash
+CONTAINER_KIND=charliecloud CONTAINER_MODULE=charliecloud/0.33 \
+ACCOUNT=<your_account> PARTITION=cpu ./hprc/smoke_test.sh
+```
 
 Steps 3-6 below are the manual, step-by-step equivalents if you prefer to run
 each phase yourself.
@@ -122,9 +131,9 @@ run_init () {  # name  nlevels  seed  entities
       --dataset_name $1 --env_id OpenWorldCreative-v0 --ep_timesteps 600 \
       --seed $3 --init --num_levels $2 --dynamic_agent_entities '$4'"
 }
-run_init train_1k 1000 1 "$SEEN"
-run_init eval1     140  2 "$SEEN"
-run_init eval2     60   3 "$UNSEEN"
+run_init train 100 1 "$SEEN"
+run_init eval1 28  2 "$SEEN"
+run_init eval2 12  3 "$UNSEEN"
 ```
 
 ## 6. Submit the parallel generation (one array per dataset)
@@ -133,9 +142,9 @@ Array size == `WORLD_SIZE`. More tasks = faster (bounded by your allocation).
 SEEN=$(cat datasets/agent_split/seen.txt)
 UNSEEN=$(cat datasets/agent_split/unseen.txt)
 
-sbatch --array=0-31 --export=ALL,WORLD_SIZE=32,DATASET=train_1k,ENTITIES="$SEEN"  hprc/generate_array.slurm
-sbatch --array=0-15 --export=ALL,WORLD_SIZE=16,DATASET=eval1,ENTITIES="$SEEN"     hprc/generate_array.slurm
-sbatch --array=0-7  --export=ALL,WORLD_SIZE=8,DATASET=eval2,ENTITIES="$UNSEEN"    hprc/generate_array.slurm
+sbatch --array=0-49 --export=ALL,WORLD_SIZE=50,DATASET=train,ENTITIES="$SEEN"  hprc/generate_array.slurm
+sbatch --array=0-27 --export=ALL,WORLD_SIZE=28,DATASET=eval1,ENTITIES="$SEEN"  hprc/generate_array.slurm
+sbatch --array=0-11 --export=ALL,WORLD_SIZE=12,DATASET=eval2,ENTITIES="$UNSEEN" hprc/generate_array.slurm
 ```
 Rule: the `--array=0-(N-1)` upper bound must be `WORLD_SIZE-1`.
 
@@ -143,14 +152,14 @@ Rule: the `--array=0-(N-1)` upper bound must be `WORLD_SIZE-1`.
 ```bash
 squeue -u $USER            # running/queued tasks
 tail -f logs/craftium-gen_*_*.out
-ls datasets/train_1k/raw/OpenWorldCreative-v0/ | wc -l   # levels done so far
+ls datasets/train/raw/OpenWorldCreative-v0/ | wc -l   # levels done so far
 ```
 Re-running an array is safe: existing levels are skipped, only missing seeds are
 filled (add `--overwrite_leveldata` only if you want to redo them).
 
 ## Sizing tips
 - ~2 CPUs + ~6 GB RAM per worker is plenty (one headless Minetest each).
-- 600 frames/level is roughly a couple minutes; 1000 levels / 32 workers ≈ a few
-  hours. Scale `WORLD_SIZE` (and the array) up to what your allocation allows.
+- 600 frames/level is roughly a couple minutes; 100 levels / 50 workers ≈ well
+  under an hour. Scale `WORLD_SIZE` (and the array) up to what your allocation allows.
 - Keep `datasets/` on `$SCRATCH` (it can get large). Copy finished datasets to
   more permanent storage when done, since scratch is purged periodically.

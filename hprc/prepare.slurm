@@ -17,7 +17,8 @@ mkdir -p logs
 cd "$SCRATCH/PERSIST"
 source hprc/container.sh
 FRAMES="${FRAMES:-600}"
-TRAIN_N="${TRAIN_N:-1000}"; EVAL1_N="${EVAL1_N:-140}"; EVAL2_N="${EVAL2_N:-60}"
+# Targets: train 100, eval 40 split 70/30 -> eval1 28 (seen), eval2 12 (unseen).
+TRAIN_N="${TRAIN_N:-100}"; EVAL1_N="${EVAL1_N:-28}"; EVAL2_N="${EVAL2_N:-12}"
 
 ctr_exec "
   set -e
@@ -31,7 +32,7 @@ ctr_exec "
       --seed \"\$3\" --init --overwrite_init --num_levels \"\$2\" \
       --dynamic_agent_entities \"\$4\"
   }
-  init train_1k $TRAIN_N 1 \"\$SEEN\"
-  init eval1     $EVAL1_N 2 \"\$SEEN\"
-  init eval2     $EVAL2_N 3 \"\$UNSEEN\"
+  init train $TRAIN_N 1 \"\$SEEN\"
+  init eval1 $EVAL1_N 2 \"\$SEEN\"
+  init eval2 $EVAL2_N 3 \"\$UNSEEN\"
 "
