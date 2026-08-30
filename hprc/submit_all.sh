@@ -2,25 +2,37 @@
 # Submit the WHOLE pipeline to Slurm as detached, dependency-chained jobs, then
 # you can log out / close your laptop - it keeps running on HPRC.
 #
-#   setup (build venv)  ->  prepare (split + init)  ->  3 generation arrays
+#   [image build (FASTER only)] -> setup (venv) -> prepare (split+init) -> 3 gen arrays
 #
-# Usage (from $SCRATCH/PERSIST):
-#   ACCOUNT=<your_acct> PARTITION=medium ./hprc/submit_all.sh
-# Optional overrides: WS_TRAIN, WS_EVAL1, WS_EVAL2 (array widths = worker counts).
-#   Find your account with `myproject` (HPRC); Grace has time-named partitions: use `medium` (1 day) or `long` (7 days), not `cpu`.
+# Grace (Singularity, image already copied to $SCRATCH/craftium.sif):
+#   ACCOUNT=<acct> PARTITION=medium ./hprc/submit_all.sh
+#
+# FASTER (Charliecloud; image built on-cluster automatically if missing):
+#   CONTAINER_KIND=charliecloud CONTAINER_MODULE=charliecloud/0.33 \
+#   ACCOUNT=<acct> PARTITION=cpu ./hprc/submit_all.sh
+#
+# Optional: WS_TRAIN/WS_EVAL1/WS_EVAL2 (array widths = worker counts).
 set -e
 cd "$SCRATCH/PERSIST"
 mkdir -p logs datasets
 
 ACCOUNT="${ACCOUNT:?set ACCOUNT (see: myproject)}"
-PARTITION="${PARTITION:?set PARTITION (Grace: medium or long; NOT cpu)}"
+PARTITION="${PARTITION:?set PARTITION (Grace: medium/long; FASTER: cpu)}"
 WS_TRAIN="${WS_TRAIN:-32}"
 WS_EVAL1="${WS_EVAL1:-16}"
 WS_EVAL2="${WS_EVAL2:-8}"
 
 SB="sbatch --parsable --account=$ACCOUNT --partition=$PARTITION"
 
-S=$($SB hprc/setup_env.slurm)
+DEP=""
+# FASTER/Charliecloud: build the image on-cluster first if it isn't there yet.
+if [ "${CONTAINER_KIND:-}" = "charliecloud" ] && [ ! -e "${CH_IMAGE:-$SCRATCH/craftium.sqfs}" ]; then
+  B=$($SB hprc/build_image.slurm)
+  echo "image    job = $B  (Charliecloud build)"
+  DEP="--dependency=afterok:$B"
+fi
+
+S=$($SB $DEP hprc/setup_env.slurm)
 echo "setup    job = $S"
 
 P=$($SB --dependency=afterok:$S hprc/prepare.slurm)

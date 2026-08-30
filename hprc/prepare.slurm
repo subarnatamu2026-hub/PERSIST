@@ -14,14 +14,12 @@
 
 set -e
 mkdir -p logs
-CONTAINER="${CONTAINER:-singularity}"
-[ -n "${CONTAINER_MODULE:-}" ] && module load "$CONTAINER_MODULE" || true
-SIF="${SIF:-$SCRATCH/craftium.sif}"
+cd "$SCRATCH/PERSIST"
+source hprc/container.sh
 FRAMES="${FRAMES:-600}"
 TRAIN_N="${TRAIN_N:-1000}"; EVAL1_N="${EVAL1_N:-140}"; EVAL2_N="${EVAL2_N:-60}"
-cd "$SCRATCH/PERSIST"
 
-"$CONTAINER" exec --bind /scratch "$SIF" bash -lc "
+ctr_exec "
   set -e
   cd '$SCRATCH/PERSIST' && source .venv/bin/activate
   python tools/agent_splits.py

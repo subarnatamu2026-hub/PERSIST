@@ -13,6 +13,20 @@ Everything lives in **`$SCRATCH`** (`/scratch/user/subarna_tamu.2026`).
 > `/usr/bin/singularity`; no `module load` needed). Everywhere below that says
 > `apptainer`, use `singularity` with the same arguments.
 
+## FASTER quick path (Charliecloud, no WSL needed)
+FASTER has no Singularity/Apptainer — it uses **Charliecloud**, which builds
+unprivileged, so the whole thing runs on-cluster. Account is funded, partition is
+`cpu`. From `$SCRATCH/PERSIST` (after cloning, §1):
+```bash
+CONTAINER_KIND=charliecloud CONTAINER_MODULE=charliecloud/0.33 \
+ACCOUNT=142689572675 PARTITION=cpu ./hprc/submit_all.sh
+```
+This auto-submits (all detached, dependency-chained): **build the Charliecloud
+image** (`hprc/Dockerfile` -> `$SCRATCH/craftium.sqfs`) -> **setup venv** ->
+**prepare** -> **3 generation arrays**. Log out; it keeps running. Use the exact
+`charliecloud/NN` version from `module avail`. Everything below is the general/
+Grace (Singularity) reference.
+
 ## 0. Connect with MobaXterm
 - Session → SSH. Remote host: `grace.hprc.tamu.edu` (or `faster.hprc.tamu.edu`).
   Username: your NetID (`subarna_tamu.2026`). Port 22.

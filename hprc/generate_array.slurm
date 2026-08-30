@@ -1,11 +1,10 @@
 #!/bin/bash
 # Slurm JOB ARRAY: parallel Craftium dataset generation. Each array task is one
-# data-parallel worker (--rank) over the SAME dataset's level seeds, so N tasks
-# generate N disjoint chunks concurrently. Fully detached (survives logout).
+# data-parallel worker (--rank) over the SAME dataset's level seeds. Detached.
 #
 # Pass DATASET and WORLD_SIZE via --export; entities are read from the split
-# files (seen for train/eval1, unseen for eval2) so no comma-laden value goes
-# through --export. account/partition come from submit_all.sh or the sbatch CLI.
+# files (seen for train/eval1, unseen for eval2). account/partition + CONTAINER*
+# come from submit_all.sh / the sbatch env.
 #
 #SBATCH --job-name=craftium-gen
 #SBATCH --output=logs/%x_%A_%a.out
@@ -20,16 +19,14 @@
 
 set -e
 mkdir -p logs
-CONTAINER="${CONTAINER:-singularity}"
-[ -n "${CONTAINER_MODULE:-}" ] && module load "$CONTAINER_MODULE" || true
+cd "$SCRATCH/PERSIST"
+source hprc/container.sh
 
-SIF="${SIF:-$SCRATCH/craftium.sif}"
 WORLD_SIZE="${WORLD_SIZE:?set WORLD_SIZE (must equal the array size)}"
 DATASET="${DATASET:?set DATASET}"
 FRAMES="${FRAMES:-600}"
 ENVID="${ENVID:-OpenWorldCreative-v0}"
 
-# Entities: eval2 draws from the unseen pool, everything else from seen.
 if [ -n "${ENTITIES_FILE:-}" ]; then
   ENTS_FILE="$ENTITIES_FILE"
 elif [ "$DATASET" = "eval2" ]; then
@@ -41,7 +38,7 @@ fi
 RANK="${SLURM_ARRAY_TASK_ID}"
 PORT=$((30000 + RANK * 4))   # unique Minetest port per worker (Xvfb display is 99+rank in code)
 
-"$CONTAINER" exec --bind /scratch "$SIF" bash -lc "
+ctr_exec "
   set -e
   cd '$SCRATCH/PERSIST' && source .venv/bin/activate
   ENTS=\$(cat '$ENTS_FILE')
