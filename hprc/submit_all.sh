@@ -18,9 +18,9 @@ mkdir -p logs datasets
 
 ACCOUNT="${ACCOUNT:?set ACCOUNT (see: myproject)}"
 PARTITION="${PARTITION:?set PARTITION (Grace: medium/long; FASTER: cpu)}"
-WS_TRAIN="${WS_TRAIN:-32}"
-WS_EVAL1="${WS_EVAL1:-16}"
-WS_EVAL2="${WS_EVAL2:-8}"
+WS_TRAIN="${WS_TRAIN:-64}"
+WS_EVAL1="${WS_EVAL1:-32}"
+WS_EVAL2="${WS_EVAL2:-16}"
 
 SB="sbatch --parsable --account=$ACCOUNT --partition=$PARTITION"
 

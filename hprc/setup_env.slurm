@@ -7,8 +7,8 @@
 #SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=24G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=48G
 ### account/partition are supplied by submit_all.sh, or uncomment & set here:
 ### #SBATCH --account=YOUR_ACCOUNT
 ### #SBATCH --partition=YOUR_PARTITION
