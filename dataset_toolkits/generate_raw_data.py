@@ -159,17 +159,22 @@ class Args:
     species still varies per level because each slot draws a random entity from the
     seen/unseen list."""
 
-    dynamic_agents_leash_radius: float = 12.0
+    dynamic_agents_leash_radius: float = 14.0
     """Soft leash: mobs wander freely within this horizontal distance of the player.
     A mob that strays beyond it is quietly relocated back ONLY while it is off-screen
     (out of the player's view cone), so mobs stay observable within the 600-frame
     episode without ever being seen to move. Set to 0 to let mobs wander freely."""
 
-    dynamic_agents_min_radius: float = 5.0
-    """Inner radius of the ring mobs are (re)spawned into around the player."""
+    dynamic_agents_min_radius: float = 4.0
+    """Inner radius of the ring mobs are distributed into around the player."""
 
-    dynamic_agents_max_radius: float = 10.0
-    """Outer radius of the (re)spawn ring (clamped inside the leash by the mod)."""
+    dynamic_agents_max_radius: float = 12.0
+    """Outer radius of the spawn ring (< leash). Mobs are placed at a random bearing
+    across the full 360 degrees so they surround the player rather than clumping."""
+
+    dynamic_agents_min_separation: float = 4.0
+    """Minimum horizontal spacing between mobs at spawn/relocation, so the herd stays
+    sparse (spread out) instead of clustering a lot of mobs in one place."""
 
     dynamic_agents_view_half_angle: float = 65.0
     """Half-angle (degrees) of the player's view cone used to decide whether a spawn/
@@ -614,6 +619,7 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_leash_radius": args.dynamic_agents_leash_radius,
                 "dynamic_agents_min_radius": args.dynamic_agents_min_radius,
                 "dynamic_agents_max_radius": args.dynamic_agents_max_radius,
+                "dynamic_agents_min_separation": args.dynamic_agents_min_separation,
                 "dynamic_agents_view_half_angle": args.dynamic_agents_view_half_angle,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
                 "dynamic_agents_entities": args.dynamic_agent_entities,

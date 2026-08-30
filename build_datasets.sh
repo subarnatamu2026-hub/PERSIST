@@ -25,10 +25,16 @@ UNSEEN=$(cat datasets/agent_split/unseen.txt)
 echo "SEEN  pool -> train + eval1"
 echo "UNSEEN pool -> eval2 (zero-shot)"
 
+# Set OVERWRITE=1 to regenerate levels that already exist on disk (otherwise
+# existing levels are skipped). Needed after a code change so stale videos from
+# an earlier run are re-rendered instead of kept.
+OVERWRITE_FLAG=""
+if [ "${OVERWRITE:-0}" = "1" ]; then OVERWRITE_FLAG="--overwrite_leveldata"; fi
+
 run_group () {  # name  num_levels  seed  entities
   local NAME=$1 N=$2 SEED=$3 ENTS=$4
   echo "==================================================================="
-  echo "==> $NAME : $N levels, seed=$SEED, $FRAMES frames"
+  echo "==> $NAME : $N levels, seed=$SEED, $FRAMES frames  OVERWRITE=${OVERWRITE:-0}"
   echo "==================================================================="
   uv run python dataset_toolkits/generate_raw_data.py \
     --dataset_dir datasets --dataset_name "$NAME" --env_id "$ENV" \
@@ -36,7 +42,7 @@ run_group () {  # name  num_levels  seed  entities
     --dynamic_agent_entities "$ENTS"
   uv run python dataset_toolkits/generate_raw_data.py \
     --dataset_dir datasets --dataset_name "$NAME" --env_id "$ENV" \
-    --disable_commit_check --ep_timesteps "$FRAMES" \
+    --disable_commit_check --ep_timesteps "$FRAMES" $OVERWRITE_FLAG \
     --dynamic_agent_entities "$ENTS"
 }
 
