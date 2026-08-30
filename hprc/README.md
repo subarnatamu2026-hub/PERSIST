@@ -44,20 +44,26 @@ singularity build --fakeroot $SCRATCH/craftium.sif hprc/craftium.def
 If Grace refuses `--fakeroot` (most HPRC sites disable user fakeroot), build the
 image on a machine where you have root — e.g. your WSL laptop, which already has a
 working setup — and copy it over:
+Grace disables user `--fakeroot` (`libsubid: -1`), so build on WSL where you have
+root, then copy the finished image:
 ```bash
 # on WSL:
-sudo apt install -y apptainer
-cd ~/PERSIST && apptainer build --fakeroot craftium.sif hprc/craftium.def
+sudo add-apt-repository -y ppa:apptainer/ppa
+sudo apt update && sudo apt install -y apptainer
+cd ~/PERSIST && sudo apptainer build craftium.sif hprc/craftium.def   # real root; no --fakeroot
 scp craftium.sif subarna_tamu.2026@grace.hprc.tamu.edu:/scratch/user/subarna_tamu.2026/
 ```
 (or drag `craftium.sif` into `/scratch/user/subarna_tamu.2026/` via MobaXterm's SFTP panel).
 
 ## 3. Build the Python env (torch + craftium) — once
-Compiles Minetest into `$SCRATCH/PERSIST/.venv`. Do it in an interactive job:
+Compiles Minetest into `$SCRATCH/PERSIST/.venv`. Do it in an interactive job.
+`WebProxy` gives the compute node outbound internet (Singularity passes it into
+the container) so `uv sync` can download torch etc.:
 ```bash
 srun --time=02:00:00 --cpus-per-task=8 --mem=16G --pty bash
-module load Apptainer
-apptainer exec --bind /scratch $SCRATCH/craftium.sif bash hprc/setup_env.sh
+module load WebProxy
+cd $SCRATCH/PERSIST
+singularity exec --bind /scratch $SCRATCH/craftium.sif bash hprc/setup_env.sh
 exit    # leave the interactive job
 ```
 
