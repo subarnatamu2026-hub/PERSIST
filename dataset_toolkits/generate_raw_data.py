@@ -30,6 +30,7 @@ from gym_envs.craftium.craftium.wrappers import NueToEnuVoxelObs, enu_to_nue
 from utils import get_file_hash, seed_everything
 from utils.action_util import MultiDiscreteActionWrapper
 from dynamic_data import collect_dynamic_data
+from guided_nav import GuidedNavigator
 
 EMPTY_SPACE_NODE_IDS = [126, 127]
 
@@ -135,6 +136,13 @@ class Args:
     """If True, the agent only performs navigation actions (walk, strafe, jump, sneak,
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
+
+    guided_navigation: bool = True
+    """If True, drive the player with a goal-directed controller that reads the live
+    per-frame mob positions and steers the player to turn toward and approach each
+    dynamic agent in turn (so they actually appear in frame), instead of a purely
+    random walk. Falls back to random if the dynamic log can't be read. Set False to
+    restore the old random policy. Requires collect_dynamic_data=True."""
 
     camera_pitch_limit_deg: float = 35.0
     """Keep the camera pitch within +-this many degrees of the horizon, so the player
@@ -689,48 +697,71 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "yaw": info["player_yaw"],
             }
             level_meta["minetest_conf"] = env.unwrapped.get_mt_config()
+
+            # Optional goal-directed controller: reads the live mob positions and
+            # steers the player to turn toward / approach each agent in turn. Falls
+            # back to the random policy below if it can't be built.
+            navigator = None
+            if args.guided_navigation and args.collect_dynamic_data:
+                try:
+                    navigator = GuidedNavigator(
+                        run_dir=env.unwrapped.mt.run_dir,
+                        actions=env.actions,
+                        action_shape=env.action_space.shape,
+                        fov_deg=args.fov,
+                        pitch_limit_deg=args.camera_pitch_limit_deg,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Guided navigator unavailable ({e}); using random policy")
+                    navigator = None
+
             L = float(args.camera_pitch_limit_deg)  # keep the view within +-L of horizon
             while ts < args.ep_timesteps:
-                # Camera-pitch controller (recomputed every frame so it also acts
-                # mid action-repeat): bias the look-up/look-down probabilities to
-                # keep the pitch within a mostly-horizontal band [-L, +L], so the
-                # player looks around the environment instead of locking onto the
-                # sky or the ground. Distances are measured to +-L (not +-90), so
-                # the avoidance kicks in early and hard.
-                pitch = info["player_pitch"]
-                dist_up = np.clip((L - pitch) / L, 0.0, 2.0)    # small near the top
-                dist_down = np.clip((L + pitch) / L, 0.0, 2.0)  # small near the bottom
-                sharpness = 4
-                w_up = dist_up**sharpness
-                w_down = dist_down**sharpness
-                denom = w_up + w_down
-                if denom <= 0:
-                    p_up_total, p_down_total = 0.5, 0.5
+                if navigator is not None:
+                    # Goal-directed: turn toward / approach the next unobserved mob.
+                    action = navigator.act()
+                    repeat = np.zeros_like(repeat)
                 else:
-                    p_up_total = w_up / denom
-                    p_down_total = w_down / denom
-                action_probs[3][1] = p_down_total * 0.38 + 0.01  # hardcode the camera action idx
-                action_probs[3][2] = p_up_total * 0.38 + 0.01  # hardcode the camera action idx
-                action_cmf[3] = np.cumsum(action_probs[3])  # hardcode the camera action idx
-                # The pitch action (index 1 or 2) with the higher probability is the
-                # one that pulls the view back toward the horizon.
-                corr_idx = 1 if action_probs[3][1] >= action_probs[3][2] else 2
+                    # Camera-pitch controller (recomputed every frame so it also acts
+                    # mid action-repeat): bias the look-up/look-down probabilities to
+                    # keep the pitch within a mostly-horizontal band [-L, +L], so the
+                    # player looks around the environment instead of locking onto the
+                    # sky or the ground. Distances are measured to +-L (not +-90), so
+                    # the avoidance kicks in early and hard.
+                    pitch = info["player_pitch"]
+                    dist_up = np.clip((L - pitch) / L, 0.0, 2.0)    # small near the top
+                    dist_down = np.clip((L + pitch) / L, 0.0, 2.0)  # small near the bottom
+                    sharpness = 4
+                    w_up = dist_up**sharpness
+                    w_down = dist_down**sharpness
+                    denom = w_up + w_down
+                    if denom <= 0:
+                        p_up_total, p_down_total = 0.5, 0.5
+                    else:
+                        p_up_total = w_up / denom
+                        p_down_total = w_down / denom
+                    action_probs[3][1] = p_down_total * 0.38 + 0.01  # hardcode the camera action idx
+                    action_probs[3][2] = p_up_total * 0.38 + 0.01  # hardcode the camera action idx
+                    action_cmf[3] = np.cumsum(action_probs[3])  # hardcode the camera action idx
+                    # The pitch action (index 1 or 2) with the higher probability is
+                    # the one that pulls the view back toward the horizon.
+                    corr_idx = 1 if action_probs[3][1] >= action_probs[3][2] else 2
 
-                if not repeat.any():
-                    action = np.zeros_like(repeat)
-                    for j in range(len(action)):
-                        action[j] = np.argmax(np.random.rand() < action_cmf[j])
-                        repeat[j] = sample_repeat(env.actions[j][action[j] - 1]) if action[j] > 0 else 0
-                else:
-                    repeat = (repeat - 1).clip(min=0)
-                    action[repeat == 0] = 0
+                    if not repeat.any():
+                        action = np.zeros_like(repeat)
+                        for j in range(len(action)):
+                            action[j] = np.argmax(np.random.rand() < action_cmf[j])
+                            repeat[j] = sample_repeat(env.actions[j][action[j] - 1]) if action[j] > 0 else 0
+                    else:
+                        repeat = (repeat - 1).clip(min=0)
+                        action[repeat == 0] = 0
 
-                # Hard guard: if the pitch has left the allowed band, override the
-                # camera axis to correct back toward the horizon this frame instead
-                # of lingering (e.g. staring at the sky) through a long repeat.
-                if abs(pitch) > L:
-                    action[3] = corr_idx
-                    repeat[3] = 1
+                    # Hard guard: if the pitch has left the allowed band, override the
+                    # camera axis to correct back toward the horizon this frame instead
+                    # of lingering (e.g. staring at the sky) through a long repeat.
+                    if abs(pitch) > L:
+                        action[3] = corr_idx
+                        repeat[3] = 1
 
                 # we store interaction tuples in the format
                 # (obs_t, info_t, action_t, reward_t+1, termination_t+1, truncation_t+1)
