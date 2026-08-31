@@ -136,6 +136,12 @@ class Args:
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
 
+    camera_pitch_limit_deg: float = 35.0
+    """Keep the camera pitch within +-this many degrees of the horizon, so the player
+    looks around the environment (where the mobs are) instead of drifting up and
+    staring at the sky (or down at the ground) for long stretches. Larger = more
+    freedom to look up/down; smaller = more strictly horizontal."""
+
     clean_rgb: bool = True
     """If True, hide the HUD (hotbar, health/breath bars, etc.) and the first-person
     wielded hand/item from the RGB observation. Purely visual; does not change actions,
@@ -683,20 +689,34 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "yaw": info["player_yaw"],
             }
             level_meta["minetest_conf"] = env.unwrapped.get_mt_config()
+            L = float(args.camera_pitch_limit_deg)  # keep the view within +-L of horizon
             while ts < args.ep_timesteps:
+                # Camera-pitch controller (recomputed every frame so it also acts
+                # mid action-repeat): bias the look-up/look-down probabilities to
+                # keep the pitch within a mostly-horizontal band [-L, +L], so the
+                # player looks around the environment instead of locking onto the
+                # sky or the ground. Distances are measured to +-L (not +-90), so
+                # the avoidance kicks in early and hard.
+                pitch = info["player_pitch"]
+                dist_up = np.clip((L - pitch) / L, 0.0, 2.0)    # small near the top
+                dist_down = np.clip((L + pitch) / L, 0.0, 2.0)  # small near the bottom
+                sharpness = 4
+                w_up = dist_up**sharpness
+                w_down = dist_down**sharpness
+                denom = w_up + w_down
+                if denom <= 0:
+                    p_up_total, p_down_total = 0.5, 0.5
+                else:
+                    p_up_total = w_up / denom
+                    p_down_total = w_down / denom
+                action_probs[3][1] = p_down_total * 0.38 + 0.01  # hardcode the camera action idx
+                action_probs[3][2] = p_up_total * 0.38 + 0.01  # hardcode the camera action idx
+                action_cmf[3] = np.cumsum(action_probs[3])  # hardcode the camera action idx
+                # The pitch action (index 1 or 2) with the higher probability is the
+                # one that pulls the view back toward the horizon.
+                corr_idx = 1 if action_probs[3][1] >= action_probs[3][2] else 2
+
                 if not repeat.any():
-                    # distance from top/bottom boundary
-                    dist_up = (90 - info["player_pitch"]) / 90  # 2 at -90, 0 at 90
-                    dist_down = (90 + info["player_pitch"]) / 90  # 2 at 90, 0 at -90
-                    # squash with nonlinearity so effect is only near boundary
-                    sharpness = 4
-                    w_up = dist_up**sharpness
-                    w_down = dist_down**sharpness
-                    p_up_total = w_up / (w_up + w_down)
-                    p_down_total = w_down / (w_up + w_down)
-                    action_probs[3][1] = p_down_total * 0.38 + 0.01  # hardcode the camera action idx
-                    action_probs[3][2] = p_up_total * 0.38 + 0.01  # hardcode the camera action idx
-                    action_cmf[3] = np.cumsum(action_probs[3])  # hardcode the camera action idx
                     action = np.zeros_like(repeat)
                     for j in range(len(action)):
                         action[j] = np.argmax(np.random.rand() < action_cmf[j])
@@ -704,6 +724,13 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 else:
                     repeat = (repeat - 1).clip(min=0)
                     action[repeat == 0] = 0
+
+                # Hard guard: if the pitch has left the allowed band, override the
+                # camera axis to correct back toward the horizon this frame instead
+                # of lingering (e.g. staring at the sky) through a long repeat.
+                if abs(pitch) > L:
+                    action[3] = corr_idx
+                    repeat[3] = 1
 
                 # we store interaction tuples in the format
                 # (obs_t, info_t, action_t, reward_t+1, termination_t+1, truncation_t+1)
