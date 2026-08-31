@@ -32,6 +32,22 @@ for NAME in train eval1 eval2; do
       '!' -exec test -e '{}/data.npz' ';' -print -exec rm -rf '{}' ';' || true
 done
 
+# 1b) Ensure each dataset has a dataset_params.json (generation loads it and
+#     crashes if missing). If absent, run a one-time --init to create it (this
+#     also writes a level_seeds.txt, which step 2 then rebuilds from disk).
+ensure_init () {  # name seed target entities
+  if [ ! -f "datasets/$1/dataset_params.json" ]; then
+    echo "[init] datasets/$1 has no dataset_params.json -> initializing"
+    uv run python dataset_toolkits/generate_raw_data.py \
+      --dataset_dir datasets --dataset_name "$1" --env_id "$ENV" \
+      --ep_timesteps "$FRAMES" --seed "$2" --init --overwrite_init \
+      --num_levels "$3" --dynamic_agent_entities "$4"
+  fi
+}
+ensure_init train 1 "$TRAIN_N" "$SEEN"
+ensure_init eval1 2 "$EVAL1_N" "$SEEN"
+ensure_init eval2 3 "$EVAL2_N" "$UNSEEN"
+
 # 2) Rebuild level_seeds.txt = completed-on-disk seeds + new randoms up to target.
 extend_seeds () {  # name target
   python - "$1" "$2" "$ENV" <<'PY'
