@@ -182,8 +182,11 @@ class GuidedNavigator:
             yaw_err = _wrap(self._desired_yaw(dx, dz) - yaw)
             slot = a.get("slot")
             cand.append((slot, dist, yaw_err, ay - py))
-            if dist <= self.observe_dist and abs(yaw_err) <= self.fov * 0.45:
-                self.observed.add(slot)
+            # NOTE: we do NOT mark observed here. A mob is only marked observed
+            # after the controller has *settled* on it (see dwell logic below), so
+            # a mob merely sweeping across the screen during a wrong-way turn does
+            # not count -- that lets the stall watchdog detect a bad turn direction
+            # and flip the convention instead of spinning forever.
 
         # Watchdog: if there are still-unobserved mobs but we make no progress for
         # a long stretch, the yaw aim is probably mirrored -> flip the convention
@@ -195,7 +198,7 @@ class GuidedNavigator:
         elif n_unobs > 0 and n_present > 0:
             self.stall += 1
         self._last_obs_count = len(self.observed)
-        if self.stall > 250:
+        if self.stall > 90:
             self.conv = -self.conv
             self.stall = 0
 
@@ -229,16 +232,30 @@ class GuidedNavigator:
             return action
         slot, dist, yaw_err, dy = min(pool, key=lambda c: c[1])
 
+        # --- dwell: only mark observed once the target has stayed centered+near
+        #     for several consecutive frames (prevents fly-by marking) ---
+        centered = (dist <= self.observe_dist) and (abs(yaw_err) <= self.fov * 0.30)
+        if slot == getattr(self, "_dwell_slot", None) and centered:
+            self._dwell = getattr(self, "_dwell", 0) + 1
+        else:
+            self._dwell_slot = slot
+            self._dwell = 1 if centered else 0
+        if self._dwell >= 8:
+            self.observed.add(slot)
+            self._dwell = 0
+
         # --- yaw: turn toward the target ---
         if abs(yaw_err) > 0.12:
             action[2] = self._turn_action(yaw_err > 0)
 
-        # --- pitch: aim a touch toward the target's height, clamped near horizon ---
-        desired_pitch = math.atan2(dy, max(dist, 1e-3))
-        desired_pitch = max(-self.pitch_limit, min(self.pitch_limit, desired_pitch))
-        # engine pitch sign unknown; drive current pitch (rec player pitch) toward desired
-        if abs(desired_pitch - pitch) > math.radians(4):
-            action[3] = self._pitch_action(desired_pitch > pitch)
+        # --- pitch: keep the view near the horizon (NOT aimed at the mob's exact
+        #     height, whose sign convention is engine-dependent and caused the
+        #     "look at the sky" bug). Ground mobs within the leash are inside the
+        #     vertical FOV at a level view. Drive pitch toward 0 using the
+        #     calibrated pitch sign (works whichever way the engine measures it). ---
+        if abs(pitch) > math.radians(6):
+            # want to move pitch toward 0: increase it if it's currently negative
+            action[3] = self._pitch_action(pitch < 0)
 
         # --- movement: walk toward the target once roughly facing it ---
         if abs(yaw_err) < 0.6 and dist > self.close_dist:

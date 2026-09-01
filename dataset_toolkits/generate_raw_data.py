@@ -137,7 +137,7 @@ class Args:
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
 
-    guided_navigation: bool = True
+    guided_navigation: bool = False
     """If True, drive the player with a goal-directed controller that reads the live
     per-frame mob positions and steers the player to turn toward and approach each
     dynamic agent in turn (so they actually appear in frame), instead of a purely
