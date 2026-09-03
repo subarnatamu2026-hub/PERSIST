@@ -166,6 +166,14 @@ class Args:
     the scene with far more than the intended count. Our mod uses direct add_entity, which
     is unaffected by this setting."""
 
+    dynamic_agents_free_roam: bool = True
+    """If True, mobs wander freely with their own AI: NO leash (they are never pulled
+    back to the player) and NO respawn top-up (a mob that leaves is not re-added), so
+    trajectories are natural/uncontrolled - a mob may travel far from the player. If
+    False, the leash keeps them near the player (better guaranteed on-camera coverage
+    but more 'controlled'). Note: with free roam, not every mob is guaranteed to stay
+    in frame; use tools/check_seen.py to measure coverage."""
+
     num_dynamic_agents: int = 10
     """Number of dynamic agents to spawn (used when min==max). Superseded by the
     min/max range below when they differ."""
@@ -659,7 +667,12 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_count": args.num_dynamic_agents,
                 "dynamic_agents_count_min": args.num_dynamic_agents_min,
                 "dynamic_agents_count_max": args.num_dynamic_agents_max,
-                "dynamic_agents_leash_radius": args.dynamic_agents_leash_radius,
+                # Free roam: leash off (0) and no respawn top-up, so mobs wander
+                # naturally and may travel far from the player.
+                "dynamic_agents_leash_radius":
+                    0.0 if args.dynamic_agents_free_roam else args.dynamic_agents_leash_radius,
+                "dynamic_agents_maintain":
+                    "false" if args.dynamic_agents_free_roam else "true",
                 "dynamic_agents_min_radius": args.dynamic_agents_min_radius,
                 "dynamic_agents_max_radius": args.dynamic_agents_max_radius,
                 "dynamic_agents_min_separation": args.dynamic_agents_min_separation,
