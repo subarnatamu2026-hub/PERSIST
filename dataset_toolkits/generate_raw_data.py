@@ -197,6 +197,11 @@ class Args:
     """Minimum horizontal spacing between mobs at spawn/relocation, so the herd stays
     sparse (spread out) instead of clustering a lot of mobs in one place."""
 
+    dynamic_agents_max_speed: float = 3.0
+    """Cap on a mob's horizontal speed (blocks/second). Lowers each mob's configured
+    walk/run speed AND hard-clamps its actual velocity every frame, so fast mobs
+    (horses, spiders) don't zip across the scene. Vertical (fall/jump) is untouched."""
+
     dynamic_agents_view_half_angle: float = 65.0
     """Half-angle (degrees) of the player's view cone used to decide whether a spawn/
     relocation spot is on-screen. Mobs are only ever spawned or relocated OUTSIDE this
@@ -646,6 +651,7 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_min_radius": args.dynamic_agents_min_radius,
                 "dynamic_agents_max_radius": args.dynamic_agents_max_radius,
                 "dynamic_agents_min_separation": args.dynamic_agents_min_separation,
+                "dynamic_agents_max_speed": args.dynamic_agents_max_speed,
                 "dynamic_agents_view_half_angle": args.dynamic_agents_view_half_angle,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
                 "dynamic_agents_entities": args.dynamic_agent_entities,
