@@ -248,9 +248,21 @@ class Args:
     does not spawn in a water body (and jump in place). Terrain-only navigation."""
 
     keep_on_land: bool = True
-    """If True, keep the player on dry land for the WHOLE episode: any step onto or
-    into water is undone by snapping it back to the last solid-ground spot (an
-    invisible wall at the water's edge). Normal walking/jumping on land is untouched."""
+    """If True, keep the player on dry land for the WHOLE episode. Instead of a hard
+    snap at the water's edge (which jerks the camera), the player is steered smoothly
+    away from water it approaches (see water_lookahead)."""
+
+    water_avoid_radius: float = 12.0
+    """Spawn the player at least this many blocks from any water, so episodes don't
+    start on a shoreline."""
+
+    water_lookahead: float = 12.0
+    """During the episode, detect water within this many blocks ahead and steer the
+    player away before it reaches the shore (smooth velocity nudge, no teleport)."""
+
+    water_push_strength: float = 2.5
+    """How strongly the player is pushed away from nearby water (blocks/second at the
+    edge of the look-ahead; stronger the closer the water). Higher = turns away harder."""
 
 
 def make_env(craftium_kwargs, mt_port_offset):
@@ -663,6 +675,11 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "spawn_on_land": "true" if args.spawn_on_land else "false",
                 # Keep the player on dry land for the whole episode.
                 "keep_player_on_land": "true" if args.keep_on_land else "false",
+                # Water avoidance: spawn this far from water, and steer away from
+                # water within the look-ahead (smoothly, no snap).
+                "water_avoid_radius": args.water_avoid_radius,
+                "water_lookahead": args.water_lookahead,
+                "water_push_strength": args.water_push_strength,
             },
         )
         # mt_port should remain in the range [args.mt_port [default:49152], 65535]
