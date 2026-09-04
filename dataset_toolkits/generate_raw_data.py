@@ -166,6 +166,12 @@ class Args:
     the scene with far more than the intended count. Our mod uses direct add_entity, which
     is unaffected by this setting."""
 
+    dynamic_agents_spawn_once: bool = True
+    """If True (default), the full set of mobs is spawned ONCE at the start and no mob
+    is ever created or relocated again mid-episode - so the environment never changes
+    after the start (no new mob appears behind/around the player). Overrides the
+    respawn top-up and the leash relocation failsafe."""
+
     dynamic_agents_free_roam: bool = True
     """If True, mobs wander freely with their own AI: NO leash (they are never pulled
     back to the player) and NO respawn top-up (a mob that leaves is not re-added), so
@@ -673,6 +679,9 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                     0.0 if args.dynamic_agents_free_roam else args.dynamic_agents_leash_radius,
                 "dynamic_agents_maintain":
                     "false" if args.dynamic_agents_free_roam else "true",
+                # Spawn once at the start; never create/relocate a mob mid-episode.
+                "dynamic_agents_spawn_once":
+                    "true" if args.dynamic_agents_spawn_once else "false",
                 "dynamic_agents_min_radius": args.dynamic_agents_min_radius,
                 "dynamic_agents_max_radius": args.dynamic_agents_max_radius,
                 "dynamic_agents_min_separation": args.dynamic_agents_min_separation,
