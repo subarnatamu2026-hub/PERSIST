@@ -137,17 +137,28 @@ class Args:
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
 
-    guided_navigation: bool = False
-    """If True, drive the player with a goal-directed controller that reads the live
-    per-frame mob positions and steers the player to turn toward and approach each
-    dynamic agent in turn (so they actually appear in frame), instead of a purely
-    random walk. Falls back to random if the dynamic log can't be read. Set False to
-    restore the old random policy. Requires collect_dynamic_data=True."""
+    guided_navigation: bool = True
+    """If True, AFTER the one-off 360-degree spin the player is driven by a goal-directed
+    controller that reads the live per-frame mob positions and turns toward / approaches
+    each dynamic agent in turn - so once one mob is centered in frame it moves on to the
+    next, until all have been observed. Before the spin the player uses the random
+    navigation policy. Falls back to random if the dynamic log can't be read. Set False
+    to keep the random policy for the whole episode. Requires collect_dynamic_data=True.
+    (If player_spin_once is False, the guided controller runs from the first frame.)"""
 
     player_spin_once: bool = True
-    """If True, once per episode (at a random time) the player stands still and turns
-    a full 360 degrees, then resumes normal navigation. Gives a full panoramic sweep
-    of the surroundings in every episode."""
+    """If True, once per episode (at a random time - see player_spin_min/max_seconds)
+    the player stands still and turns a full 360 degrees to sweep its surroundings,
+    then hands control to the guided observation tour (if guided_navigation) or resumes
+    random navigation."""
+
+    player_spin_min_seconds: float = 2.0
+    """Earliest time (seconds into the episode) the one-off 360 spin may start."""
+
+    player_spin_max_seconds: float = 5.0
+    """Latest time (seconds into the episode) the one-off 360 spin may start. The exact
+    start time is drawn uniformly in [min, max] seconds, independently per level, so it
+    varies across the dataset. Converted to frames via fps_max."""
 
     player_spin_max_frames: int = 120
     """Safety cap on how many frames the 360-degree spin may take."""
@@ -229,6 +240,17 @@ class Args:
     relocation spot is on-screen. Mobs are only ever spawned or relocated OUTSIDE this
     cone (prefer behind the player), so the player never sees a mob appear or teleport
     -- it only discovers mobs by turning toward them. Wider = more conservative."""
+
+    dynamic_agents_spawn_in_view: bool = True
+    """If True, the whole INITIAL population is spawned inside the player's forward view
+    cone so every mob starts on-screen (instead of scattered all around). Mid-episode
+    respawns, if any, are still placed off-screen. Falls back to anywhere-around if the
+    cone can't fit all the mobs."""
+
+    dynamic_agents_spawn_view_half_angle: float = 45.0
+    """Half-angle (degrees) of the forward cone the initial mobs are spawned into. Kept
+    a little narrower than the real horizontal FOV (~52 deg at fov=72, 16:9) so the mobs
+    render comfortably inside the frame rather than clipping at the edges."""
 
     dynamic_agent_entity: str = "mobs_mc:sheep"
     """Single entity id, used only if `dynamic_agent_entities` is empty."""
@@ -695,6 +717,10 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "dynamic_agents_min_separation": args.dynamic_agents_min_separation,
                 "dynamic_agents_max_speed": args.dynamic_agents_max_speed,
                 "dynamic_agents_view_half_angle": args.dynamic_agents_view_half_angle,
+                # Spawn the initial population inside the player's forward view cone.
+                "dynamic_agents_spawn_in_view":
+                    "true" if args.dynamic_agents_spawn_in_view else "false",
+                "dynamic_agents_spawn_view_half_angle": args.dynamic_agents_spawn_view_half_angle,
                 "dynamic_agents_entity": args.dynamic_agent_entity,
                 "dynamic_agents_entities": args.dynamic_agent_entities,
                 # Make hostile mobs wander like animals (no attacking).
@@ -770,18 +796,28 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
 
             L = float(args.camera_pitch_limit_deg)  # keep the view within +-L of horizon
 
-            # Schedule a one-off 360-degree spin-in-place at a random time.
-            spin_done, spin_active, spin_accum, spin_prev_yaw, spin_frames = False, False, 0.0, 0.0, 0
+            # Schedule a one-off 360-degree spin-in-place at a random time in the
+            # [min, max] SECONDS window (converted to frames via fps_max). When the
+            # spin is disabled, mark it already-done so the guided tour (if any) can
+            # run from the first frame.
+            spin_active, spin_accum, spin_prev_yaw, spin_frames = False, 0.0, 0.0, 0
+            spin_done = not args.player_spin_once
             spin_turn_idx = 2  # group-2 (mouse x) turn option
             if args.player_spin_once:
-                _hi = args.ep_timesteps - args.player_spin_max_frames - 10
-                spin_start = int(np.random.randint(40, _hi)) if _hi > 40 else 40
+                lo = max(1, int(round(args.player_spin_min_seconds * args.fps_max)))
+                hi = max(lo + 1, int(round(args.player_spin_max_seconds * args.fps_max)))
+                # leave room for the spin itself to finish before the episode ends
+                cap = args.ep_timesteps - args.player_spin_max_frames - 10
+                if cap > lo:
+                    hi = min(hi, cap)
+                spin_start = int(np.random.randint(lo, hi))
             else:
                 spin_start = -1
 
             while ts < args.ep_timesteps:
-                if navigator is not None:
-                    # Goal-directed: turn toward / approach the next unobserved mob.
+                if navigator is not None and spin_done:
+                    # Post-spin goal-directed tour: turn toward / approach the next
+                    # unobserved mob so each one is brought into frame in turn.
                     action = navigator.act()
                     repeat = np.zeros_like(repeat)
                 else:
