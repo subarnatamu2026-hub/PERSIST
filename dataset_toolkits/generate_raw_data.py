@@ -144,6 +144,14 @@ class Args:
     random walk. Falls back to random if the dynamic log can't be read. Set False to
     restore the old random policy. Requires collect_dynamic_data=True."""
 
+    player_spin_once: bool = True
+    """If True, once per episode (at a random time) the player stands still and turns
+    a full 360 degrees, then resumes normal navigation. Gives a full panoramic sweep
+    of the surroundings in every episode."""
+
+    player_spin_max_frames: int = 120
+    """Safety cap on how many frames the 360-degree spin may take."""
+
     camera_pitch_limit_deg: float = 35.0
     """Keep the camera pitch within +-this many degrees of the horizon, so the player
     looks around the environment (where the mobs are) instead of drifting up and
@@ -761,6 +769,16 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                     navigator = None
 
             L = float(args.camera_pitch_limit_deg)  # keep the view within +-L of horizon
+
+            # Schedule a one-off 360-degree spin-in-place at a random time.
+            spin_done, spin_active, spin_accum, spin_prev_yaw, spin_frames = False, False, 0.0, 0.0, 0
+            spin_turn_idx = 2  # group-2 (mouse x) turn option
+            if args.player_spin_once:
+                _hi = args.ep_timesteps - args.player_spin_max_frames - 10
+                spin_start = int(np.random.randint(40, _hi)) if _hi > 40 else 40
+            else:
+                spin_start = -1
+
             while ts < args.ep_timesteps:
                 if navigator is not None:
                     # Goal-directed: turn toward / approach the next unobserved mob.
@@ -807,6 +825,23 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                     if abs(pitch) > L:
                         action[3] = corr_idx
                         repeat[3] = 1
+
+                # One-off 360-degree spin-in-place: overrides whatever policy chose,
+                # standing still and turning until a full circle is accumulated.
+                if args.player_spin_once and not spin_done:
+                    if ts == spin_start:
+                        spin_active, spin_accum, spin_prev_yaw, spin_frames = True, 0.0, info["player_yaw"], 0
+                    if spin_active:
+                        dyaw = ((info["player_yaw"] - spin_prev_yaw + 180.0) % 360.0) - 180.0
+                        spin_accum += abs(dyaw)
+                        spin_prev_yaw = info["player_yaw"]
+                        spin_frames += 1
+                        if spin_accum >= 350.0 or spin_frames > args.player_spin_max_frames:
+                            spin_active, spin_done = False, True
+                        else:
+                            action = np.zeros_like(action)
+                            action[2] = spin_turn_idx     # turn only; stand still
+                            repeat = np.zeros_like(repeat)
 
                 # we store interaction tuples in the format
                 # (obs_t, info_t, action_t, reward_t+1, termination_t+1, truncation_t+1)
