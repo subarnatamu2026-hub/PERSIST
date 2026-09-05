@@ -2,6 +2,7 @@
 import copy
 import json
 import os
+import shutil
 import sys
 import time
 from collections import deque
@@ -983,9 +984,17 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
 
             # Discard (and let the caller reseed) levels where the player went into
             # the water or the camera shook violently - keeps those out of the dataset.
+            # This runs BEFORE any file is written, so a bad level is never added to the
+            # dataset. As a belt-and-suspenders guard we also delete the level folder if
+            # one somehow already exists (e.g. a partial write from an earlier crashed
+            # run), so a bad level is never left on disk.
             bad, reason = _level_is_bad(level_data, env.unwrapped.mt.run_dir, args)
             if bad:
-                logger.info(f"Discarding level {seed}: {reason}. Will reseed.")
+                logger.info(f"Discarding level {seed}: {reason}. Deleting any partial "
+                            f"output and reseeding.")
+                stale = raw_data_root / str(seed)
+                if stale.exists():
+                    shutil.rmtree(stale, ignore_errors=True)
                 env.unwrapped.close(not args.debug)
                 return "skipped"
 
