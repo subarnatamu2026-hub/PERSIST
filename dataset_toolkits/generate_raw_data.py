@@ -137,20 +137,26 @@ class Args:
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
 
-    guided_navigation: bool = False
+    guided_navigation: bool = True
     """If True, AFTER the one-off 360-degree spin the player is driven by a goal-directed
     controller that reads the live per-frame mob positions and turns toward / approaches
-    each dynamic agent in turn. DISABLED by default: when the mob log can't be read or all
-    mobs are already observed it falls into a continuous 'scan' turn and its pitch can
-    drift toward the sky (the 'looks up and keeps spinning' problem). With it off, the
-    player just does ONE 360 spin (see player_spin_once) and otherwise navigates normally
-    with the pitch kept near the horizon. Requires collect_dynamic_data=True."""
+    each dynamic agent in turn - so once one mob is centered it moves on to the next,
+    observing all mobs one by one. The camera PITCH is force-held near the horizon by the
+    main loop (not by the controller), which prevents the old 'looks at the sky and keeps
+    spinning' drift. Before the spin the player uses the random policy. Falls back to
+    random if the dynamic log can't be read. Requires collect_dynamic_data=True."""
 
     player_spin_once: bool = True
     """If True, once per episode (at a random time - see player_spin_min/max_seconds)
     the player stands still and turns a single full 360 degrees to observe its
-    surroundings, then resumes normal (random, horizon-kept) navigation. This is a pure
-    horizontal turn - it never looks up/down."""
+    surroundings, then hands over to the guided tour (or random nav). Pure horizontal
+    turn - it never looks up/down - and spread over player_spin_seconds so it is slow."""
+
+    player_spin_seconds: float = 6.0
+    """How long the single 360 spin takes, in seconds. The turn is spread evenly across
+    this many frames (turning only on the frames needed to track a linear ramp to 360
+    deg, standing still otherwise), so the rotation is SLOW and smooth instead of a fast
+    whip-around. Lower = faster spin; higher = slower."""
 
     player_spin_min_seconds: float = 2.0
     """Earliest time (seconds into the episode) the one-off 360 spin may start."""
@@ -160,8 +166,9 @@ class Args:
     start time is drawn uniformly in [min, max] seconds, independently per level, so it
     varies across the dataset. Converted to frames via fps_max."""
 
-    player_spin_max_frames: int = 120
-    """Safety cap on how many frames the 360-degree spin may take."""
+    player_spin_max_frames: int = 240
+    """Hard safety cap on how many frames the 360 spin may take (must exceed
+    player_spin_seconds * fps_max; the spin normally ends on its own at ~360 deg)."""
 
     camera_pitch_limit_deg: float = 35.0
     """Keep the camera pitch within +-this many degrees of the horizon, so the player
@@ -191,13 +198,12 @@ class Args:
     after the start (no new mob appears behind/around the player). Overrides the
     respawn top-up and the leash relocation failsafe."""
 
-    dynamic_agents_free_roam: bool = True
+    dynamic_agents_free_roam: bool = False
     """If True, mobs wander freely with their own AI: NO leash (they are never pulled
-    back to the player) and NO respawn top-up (a mob that leaves is not re-added), so
-    trajectories are natural/uncontrolled - a mob may travel far from the player. If
-    False, the leash keeps them near the player (better guaranteed on-camera coverage
-    but more 'controlled'). Note: with free roam, not every mob is guaranteed to stay
-    in frame; use tools/check_seen.py to measure coverage."""
+    back to the player) and NO respawn top-up. If False (default now), a SOFT leash
+    keeps them near the player - a mob that strays beyond the leash radius gently walks
+    back (no teleport under spawn_once) - so all mobs stay close and observable for the
+    whole clip. Set True for natural/uncontrolled trajectories that may leave the frame."""
 
     num_dynamic_agents: int = 5
     """Number of dynamic agents to spawn (used when min==max). Superseded by the
@@ -212,20 +218,19 @@ class Args:
     number of mobs varies per level; the *mix* of species varies too because each slot
     draws a random entity from the seen/unseen list. Set min==max to fix the count."""
 
-    dynamic_agents_leash_radius: float = 14.0
-    """Soft leash: mobs wander freely within this horizontal distance of the player.
-    A mob that strays beyond it is quietly relocated back ONLY while it is off-screen
-    (out of the player's view cone), so mobs stay observable within the 600-frame
-    episode without ever being seen to move. Set to 0 to let mobs wander freely."""
+    dynamic_agents_leash_radius: float = 12.0
+    """Soft leash: mobs wander freely within this horizontal distance of the player;
+    a mob that strays beyond it gently walks back (velocity nudge, no teleport under
+    spawn_once), so mobs stay close and observable for the whole clip. 0 disables."""
 
-    dynamic_agents_min_radius: float = 4.0
-    """Inner radius of the ring mobs are distributed into around the player."""
+    dynamic_agents_min_radius: float = 3.0
+    """Inner radius of the ring mobs are spawned into around the player."""
 
-    dynamic_agents_max_radius: float = 12.0
-    """Outer radius of the spawn ring (< leash). Mobs are placed at a random bearing
-    across the full 360 degrees so they surround the player rather than clumping."""
+    dynamic_agents_max_radius: float = 10.0
+    """Outer radius of the spawn ring (kept small so mobs spawn CLOSE to the player and
+    within its view; with spawn_in_view they land inside the forward cone)."""
 
-    dynamic_agents_min_separation: float = 4.0
+    dynamic_agents_min_separation: float = 3.0
     """Minimum horizontal spacing between mobs at spawn/relocation, so the herd stays
     sparse (spread out) instead of clustering a lot of mobs in one place."""
 
@@ -802,6 +807,8 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
             spin_active, spin_accum, spin_prev_yaw, spin_frames = False, 0.0, 0.0, 0
             spin_done = not args.player_spin_once
             spin_turn_idx = 2  # group-2 (mouse x) turn option
+            # Frames over which the 360 is spread (slow, smooth spin).
+            spin_total_frames = max(1, int(round(args.player_spin_seconds * args.fps_max)))
             if args.player_spin_once:
                 lo = max(1, int(round(args.player_spin_min_seconds * args.fps_max)))
                 hi = max(lo + 1, int(round(args.player_spin_max_seconds * args.fps_max)))
@@ -819,6 +826,12 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                     # unobserved mob so each one is brought into frame in turn.
                     action = navigator.act()
                     repeat = np.zeros_like(repeat)
+                    # Force the camera pitch back toward the horizon here (NOT inside the
+                    # controller, whose pitch-sign calibration could drift and make the
+                    # player stare at the sky while spinning). mouse-y idx 1 = look down,
+                    # 2 = look up; correct whichever way reduces |pitch|.
+                    pitch = info["player_pitch"]
+                    action[3] = (1 if pitch > 0 else 2) if abs(pitch) > 3.0 else 0
                 else:
                     # Camera-pitch controller (recomputed every frame so it also acts
                     # mid action-repeat): bias the look-up/look-down probabilities to
@@ -874,9 +887,15 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                         if spin_accum >= 350.0 or spin_frames > args.player_spin_max_frames:
                             spin_active, spin_done = False, True
                         else:
+                            # Slow, smooth spin: spread the 360 evenly over
+                            # spin_total_frames. Only turn on the frames where we are
+                            # BEHIND a linear ramp to 360 deg; stand still otherwise.
+                            # Self-calibrates to the engine's per-step turn magnitude.
                             action = np.zeros_like(action)
-                            action[2] = spin_turn_idx     # turn only; stand still
                             repeat = np.zeros_like(repeat)
+                            target = 360.0 * min(1.0, spin_frames / float(spin_total_frames))
+                            if spin_accum < target:
+                                action[2] = spin_turn_idx   # pure horizontal turn (stand still)
 
                 # we store interaction tuples in the format
                 # (obs_t, info_t, action_t, reward_t+1, termination_t+1, truncation_t+1)
