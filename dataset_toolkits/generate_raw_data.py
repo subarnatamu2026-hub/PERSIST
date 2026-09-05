@@ -137,20 +137,20 @@ class Args:
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
 
-    guided_navigation: bool = True
+    guided_navigation: bool = False
     """If True, AFTER the one-off 360-degree spin the player is driven by a goal-directed
     controller that reads the live per-frame mob positions and turns toward / approaches
-    each dynamic agent in turn - so once one mob is centered in frame it moves on to the
-    next, until all have been observed. Before the spin the player uses the random
-    navigation policy. Falls back to random if the dynamic log can't be read. Set False
-    to keep the random policy for the whole episode. Requires collect_dynamic_data=True.
-    (If player_spin_once is False, the guided controller runs from the first frame.)"""
+    each dynamic agent in turn. DISABLED by default: when the mob log can't be read or all
+    mobs are already observed it falls into a continuous 'scan' turn and its pitch can
+    drift toward the sky (the 'looks up and keeps spinning' problem). With it off, the
+    player just does ONE 360 spin (see player_spin_once) and otherwise navigates normally
+    with the pitch kept near the horizon. Requires collect_dynamic_data=True."""
 
     player_spin_once: bool = True
     """If True, once per episode (at a random time - see player_spin_min/max_seconds)
-    the player stands still and turns a full 360 degrees to sweep its surroundings,
-    then hands control to the guided observation tour (if guided_navigation) or resumes
-    random navigation."""
+    the player stands still and turns a single full 360 degrees to observe its
+    surroundings, then resumes normal (random, horizon-kept) navigation. This is a pure
+    horizontal turn - it never looks up/down."""
 
     player_spin_min_seconds: float = 2.0
     """Earliest time (seconds into the episode) the one-off 360 spin may start."""
@@ -199,19 +199,18 @@ class Args:
     but more 'controlled'). Note: with free roam, not every mob is guaranteed to stay
     in frame; use tools/check_seen.py to measure coverage."""
 
-    num_dynamic_agents: int = 10
+    num_dynamic_agents: int = 5
     """Number of dynamic agents to spawn (used when min==max). Superseded by the
     min/max range below when they differ."""
 
-    num_dynamic_agents_min: int = 10
+    num_dynamic_agents_min: int = 4
     """Minimum number of dynamic agents per level (randomized per level)."""
 
-    num_dynamic_agents_max: int = 10
+    num_dynamic_agents_max: int = 7
     """Maximum number of dynamic agents per level (randomized per level). Each level
-    picks a random count in [min, max], seeded by the level seed. Set equal to the
-    min (default 10) to spawn exactly that many agents in every level; the *mix* of
-    species still varies per level because each slot draws a random entity from the
-    seen/unseen list."""
+    picks a random count in [min, max] (default 4-7), seeded by the level seed, so the
+    number of mobs varies per level; the *mix* of species varies too because each slot
+    draws a random entity from the seen/unseen list. Set min==max to fix the count."""
 
     dynamic_agents_leash_radius: float = 14.0
     """Soft leash: mobs wander freely within this horizontal distance of the player.
