@@ -137,14 +137,12 @@ class Args:
     sprint and looking around). Interaction actions (dig/place, and therefore hitting
     mobs) are disabled. Set to False to restore the original mixed action distribution."""
 
-    guided_navigation: bool = True
-    """If True, AFTER the one-off 360-degree spin the player is driven by a goal-directed
-    controller that reads the live per-frame mob positions and turns toward / approaches
-    each dynamic agent in turn - so once one mob is centered it moves on to the next,
-    observing all mobs one by one. The camera PITCH is force-held near the horizon by the
-    main loop (not by the controller), which prevents the old 'looks at the sky and keeps
-    spinning' drift. Before the spin the player uses the random policy. Falls back to
-    random if the dynamic log can't be read. Requires collect_dynamic_data=True."""
+    guided_navigation: bool = False
+    """If True, AFTER the spin the player is driven by a goal-directed controller that
+    turns toward / approaches each mob in turn. DISABLED by default: it makes the player
+    rotate continuously (turning to face each mob), which is not wanted. With it off the
+    player observes its surroundings with ONE 360 spin (player_spin_once) and otherwise
+    just does its normal navigation task - no continuous rotation."""
 
     player_spin_once: bool = True
     """If True, once per episode (at a random time - see player_spin_min/max_seconds)
@@ -152,11 +150,11 @@ class Args:
     surroundings, then hands over to the guided tour (or random nav). Pure horizontal
     turn - it never looks up/down - and spread over player_spin_seconds so it is slow."""
 
-    player_spin_seconds: float = 6.0
-    """How long the single 360 spin takes, in seconds. The turn is spread evenly across
-    this many frames (turning only on the frames needed to track a linear ramp to 360
-    deg, standing still otherwise), so the rotation is SLOW and smooth instead of a fast
-    whip-around. Lower = faster spin; higher = slower."""
+    player_spin_seconds: float = 3.0
+    """How long the single 360 spin takes, in seconds (default ~3s = a natural,
+    human-speed look-around). The turn is spread evenly across this many frames (turning
+    only on the frames needed to track a linear ramp to 360 deg, standing still
+    otherwise). Lower = faster spin; higher = slower."""
 
     player_spin_min_seconds: float = 2.0
     """Earliest time (seconds into the episode) the one-off 360 spin may start."""
@@ -296,9 +294,25 @@ class Args:
     does not spawn in a water body (and jump in place). Terrain-only navigation."""
 
     keep_on_land: bool = True
-    """If True, keep the player on dry land for the WHOLE episode. Instead of a hard
-    snap at the water's edge (which jerks the camera), the player is steered smoothly
-    away from water it approaches (see water_lookahead)."""
+    """If True, the mod records per frame whether the player is on/over water (used by
+    skip_on_water below). It no longer teleports the player at the water's edge - that
+    snap-back was what made the camera shake - so a level where the player DOES reach
+    water is instead discarded and reseeded (see skip_on_water)."""
+
+    skip_on_water: bool = True
+    """If True, after generating a level, discard it (save nothing) and retry with a
+    fresh random seed when the player entered the water at any frame OR the camera shook
+    violently (a large frame-to-frame position jump). Guarantees the kept dataset has no
+    underwater / violently-shaking clips. Retries up to max_reseed_attempts times."""
+
+    max_reseed_attempts: int = 8
+    """Max fresh seeds to try for one level slot before giving up (avoids an infinite
+    loop if a rank keeps landing near water)."""
+
+    shake_max_step: float = 2.0
+    """A level is 'violently shaking' (and is discarded) if the player's horizontal
+    position jumps more than this many blocks between two consecutive frames - far above
+    normal walking/sprinting (~0.25/frame), so only physics glitches/teleports trip it."""
 
     water_avoid_radius: float = 12.0
     """Spawn the player at least this many blocks from any water, so episodes don't
@@ -536,6 +550,44 @@ def compute_intrisincs_extrinsics(level_data, dataset_params, device=torch.devic
         level_data[s]["extrinsics_global"] = extrinsics_global[i].cpu().numpy()
 
 
+def _level_is_bad(level_data, run_dir, args):
+    """Return (bad, reason) for a just-collected level.
+
+    A level is 'bad' (to be discarded + reseeded) if the player entered the water
+    at any frame (authoritative per-frame `on_water` flag written by the mod) or if
+    the camera shook violently (a large frame-to-frame horizontal position jump,
+    e.g. a physics glitch). Purely a read of already-collected data + the mob log.
+    """
+    # 1) Violent shake: any horizontal player-position jump far above normal motion.
+    pp = np.asarray(level_data["player_pos"], dtype=np.float64)  # [T, 3] ENU-ish (x,y,z)
+    if pp.shape[0] >= 2:
+        steps = np.linalg.norm(np.diff(pp[:, [0, 2]], axis=0), axis=1)  # horizontal only
+        if steps.size and float(steps.max()) > args.shake_max_step:
+            return True, f"violent shake (max horizontal step {float(steps.max()):.2f} > {args.shake_max_step})"
+
+    # 2) Player entered water: scan the mob log for any player record with on_water=1.
+    if args.skip_on_water:
+        log_path = os.path.join(run_dir, "worlds", "world", "data_dynamic.jsonl")
+        try:
+            n_water = 0
+            with open(log_path, "r") as f:
+                for line in f:
+                    if '"on_water"' not in line:      # cheap pre-filter
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    pl = rec.get("player") or {}
+                    if pl.get("on_water"):
+                        n_water += 1
+            if n_water > 0:
+                return True, f"player entered water ({n_water} frames)"
+        except FileNotFoundError:
+            pass  # no log (dynamic data off) -> can't check water; rely on shake test
+    return False, ""
+
+
 def sample_repeat(action):
     if action == "dig":
         return np.random.randint(7, 25)
@@ -747,7 +799,7 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
             env = make_env(craftium_kwargs, mt_port_offset=0)
         except Exception as e:
             logger.error(f"Failed to create environment with seed {seed}: {e}")
-            return
+            return "error"
 
         try:
             t_start = time.time()
@@ -927,7 +979,15 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
             if np.any(level_data["obs_voxel_mt"] > 8192):
                 logger.info(f"Corrupt voxel data detected in level {seed}, skipping level")
                 env.unwrapped.close(not args.debug)
-                return
+                return "skipped"
+
+            # Discard (and let the caller reseed) levels where the player went into
+            # the water or the camera shook violently - keeps those out of the dataset.
+            bad, reason = _level_is_bad(level_data, env.unwrapped.mt.run_dir, args)
+            if bad:
+                logger.info(f"Discarding level {seed}: {reason}. Will reseed.")
+                env.unwrapped.close(not args.debug)
+                return "skipped"
 
             level_data["obs_voxel_mt"] = level_data["obs_voxel_mt"].astype(np.int16)
             level_folder = raw_data_root / str(seed)
@@ -972,6 +1032,7 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
             logger.info(f"Finish saving level {seed}, length:{ts}, time:{time.time() - t_start}")
 
             env.unwrapped.close(not args.debug) # in debug mode, close(False) will not delete the mt_run_dir
+            return "saved"
         except Exception as e:
             logger.error(
                 f"Error happened during processing. Skipping level {seed}. Traceback: {e}"
@@ -981,10 +1042,38 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 env.unwrapped.mt.wait_close()
             if not args.debug:
                 env.unwrapped.mt.clear()
-            return
+            return "error"
+
+    # Track every seed we've used (initial + reseeds) so replacements never collide
+    # or duplicate terrain.
+    used_seeds = set(int(s) for s in total_level_seeds)
+    reseed_rng = np.random.default_rng(1_000_003 * (args.rank + 1) + int(args.seed))
+
+    def _fresh_seed():
+        s = int(reseed_rng.integers(1, 2**31 - 1))
+        while s in used_seeds:
+            s = int(reseed_rng.integers(1, 2**31 - 1))
+        used_seeds.add(s)
+        return s
 
     for seed_to_gen in seeds_to_gen:
-        env_process_executor(seed_to_gen)
+        status = env_process_executor(int(seed_to_gen))
+        # If the level was discarded (player in water / violent shake / corrupt),
+        # retry the SLOT with fresh random seeds until one is clean or we hit the cap.
+        attempts = 0
+        while status == "skipped" and args.skip_on_water and attempts < args.max_reseed_attempts:
+            new_seed = _fresh_seed()
+            attempts += 1
+            logger.info(
+                f"Reseed attempt {attempts}/{args.max_reseed_attempts} for a discarded "
+                f"level: trying seed {new_seed}"
+            )
+            status = env_process_executor(new_seed)
+        if status == "skipped":
+            logger.warning(
+                f"Gave up on a level after {args.max_reseed_attempts} reseed attempts "
+                f"(kept landing in water / shaking)."
+            )
 
 
 if __name__ == "__main__":
