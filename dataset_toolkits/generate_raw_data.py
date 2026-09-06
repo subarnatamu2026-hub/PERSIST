@@ -100,20 +100,6 @@ class Args:
     pmul: int = 1
     """Physics speed multiplier. Defaults to the default value of CraftiumEnv."""
 
-    player_walk_speed: float = 4.0
-    """Player walking speed (blocks/second) = normal Minetest default. Overrides
-    craftium's movement_speed_walk so the agent moves at a natural pace."""
-
-    player_fast_speed: float = 4.0
-    """Player 'fast' speed (blocks/second) - the speed used when the aux1 action is
-    active (which in creative mode triggers fast movement). craftium defaults this to
-    20 b/s, which makes the agent zip across the scene whenever the random policy picks
-    an aux1 move. Set equal to the walk speed so EVERY activity moves at a normal pace."""
-
-    player_fast_accel: float = 3.0
-    """Acceleration (blocks/s^2) for fast movement, matched to the normal acceleration
-    so aux1 moves don't lurch. Overrides craftium's movement_acceleration_fast (10)."""
-
     rank: int = 0
     """Process rank"""
 
@@ -750,13 +736,6 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 "fov": args.fov,
                 "world_start_time": 12000,
                 "creative_mode": True,
-                # Normalize the player's movement speed so every activity moves at a
-                # natural walking pace. craftium defaults 'fast' to 20 b/s, so an aux1
-                # move (fast, in creative) would zip the agent across the scene; here
-                # walk == fast so the agent never moves faster than a normal walk.
-                "movement_speed_walk": args.player_walk_speed,
-                "movement_speed_fast": args.player_fast_speed,
-                "movement_acceleration_fast": args.player_fast_accel,
                 # note: not sure if voxel_obs_rx or voxel_obs_rx + 1
                 "viewing_range": int(args.voxel_obs_rx * 1.25),
                 "shadow_map_max_distance": int(args.voxel_obs_rx * 1.25),
