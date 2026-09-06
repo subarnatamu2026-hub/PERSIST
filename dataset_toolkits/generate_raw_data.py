@@ -145,6 +145,12 @@ class Args:
     player observes its surroundings with ONE 360 spin (player_spin_once) and otherwise
     just does its normal navigation task - no continuous rotation."""
 
+    player_observe_hold_frames: int = 30
+    """At the very START of the episode the player stands still and looks level at the
+    forward cluster of freshly-spawned mobs for this many frames, so every mob (spawned
+    in-view with a clear line of sight) is captured for >= min_frames before the player
+    wanders off. Set 0 to disable. This is the main lever that makes ALL mobs visible."""
+
     player_spin_once: bool = True
     """If True, once per episode (at a random time - see player_spin_min/max_seconds)
     the player stands still and turns a single full 360 degrees to observe its
@@ -225,13 +231,15 @@ class Args:
     dynamic_agents_min_radius: float = 3.0
     """Inner radius of the ring mobs are spawned into around the player."""
 
-    dynamic_agents_max_radius: float = 10.0
+    dynamic_agents_max_radius: float = 9.0
     """Outer radius of the spawn ring (kept small so mobs spawn CLOSE to the player and
-    within its view; with spawn_in_view they land inside the forward cone)."""
+    within its view; with spawn_in_view they land inside the forward cone with a clear
+    line of sight to the player)."""
 
-    dynamic_agents_min_separation: float = 3.0
-    """Minimum horizontal spacing between mobs at spawn/relocation, so the herd stays
-    sparse (spread out) instead of clustering a lot of mobs in one place."""
+    dynamic_agents_min_separation: float = 2.5
+    """Minimum horizontal spacing between mobs at spawn, so the herd stays sparse but
+    still fits inside the forward view cone (smaller than before so all 4-7 mobs can be
+    placed in-view with a clear line of sight)."""
 
     dynamic_agents_max_speed: float = 0.0
     """Optional cap on a mob's horizontal speed (blocks/second). Default 0 = NO cap,
@@ -251,7 +259,7 @@ class Args:
     respawns, if any, are still placed off-screen. Falls back to anywhere-around if the
     cone can't fit all the mobs."""
 
-    dynamic_agents_spawn_view_half_angle: float = 45.0
+    dynamic_agents_spawn_view_half_angle: float = 40.0
     """Half-angle (degrees) of the forward cone the initial mobs are spawned into. Kept
     a little narrower than the real horizontal FOV (~52 deg at fov=72, 16:9) so the mobs
     render comfortably inside the frame rather than clipping at the edges."""
@@ -950,6 +958,17 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                             target = 360.0 * min(1.0, spin_frames / float(spin_total_frames))
                             if spin_accum < target:
                                 action[2] = spin_turn_idx   # pure horizontal turn (stand still)
+
+                # Initial observation hold: for the first N frames stand still and look
+                # LEVEL at the freshly-spawned forward cluster of mobs, so every mob is
+                # captured on camera for >= min_frames before the player wanders off.
+                # (Overrides the policy/spin; the spin starts >= 2 s in, so no overlap.)
+                if ts < args.player_observe_hold_frames:
+                    action = np.zeros_like(action)
+                    repeat = np.zeros_like(repeat)
+                    pitch = info["player_pitch"]
+                    if abs(pitch) > 3.0:
+                        action[3] = 1 if pitch > 0 else 2   # level the view toward the horizon
 
                 # we store interaction tuples in the format
                 # (obs_t, info_t, action_t, reward_t+1, termination_t+1, truncation_t+1)
