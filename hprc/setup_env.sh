@@ -10,9 +10,13 @@
 # your scratch PERSIST checkout so it persists for the array jobs.
 set -e
 
-# Keep all caches on scratch (login-home has small quotas).
+# Keep EVERYTHING on scratch (login-home has a small ~10GB quota that uv's
+# managed-Python download blows past -> "Disk quota exceeded (os error 122)").
 export UV_CACHE_DIR="${SCRATCH}/.uv-cache"
+export UV_PYTHON_INSTALL_DIR="${SCRATCH}/.uv-python"   # uv installs Python here (not ~/.local)
 export HF_HOME="${SCRATCH}/.hf-cache"
+export XDG_CACHE_HOME="${SCRATCH}/.cache"
+export PIP_CACHE_DIR="${SCRATCH}/.pip-cache"
 export PLAYWRIGHT_BROWSERS_PATH=0
 
 cd "${SCRATCH}/PERSIST"

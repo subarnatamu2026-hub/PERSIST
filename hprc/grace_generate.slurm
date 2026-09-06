@@ -48,7 +48,7 @@ run() { singularity exec --bind /scratch "$SIF" bash -lc "$1"; }
 # --- 1) Build the venv once (clone craftium fork + compile Minetest + torch) ---
 if [ ! -x .venv/bin/python ]; then
   echo "==> Building venv (first run only; ~15-30 min)"
-  run "cd '$PWD' && export UV_CACHE_DIR='$SCRATCH/.uv-cache' HF_HOME='$SCRATCH/.hf-cache' && bash hprc/setup_env.sh"
+  run "cd '$PWD' && export UV_CACHE_DIR='$SCRATCH/.uv-cache' UV_PYTHON_INSTALL_DIR='$SCRATCH/.uv-python' HF_HOME='$SCRATCH/.hf-cache' XDG_CACHE_HOME='$SCRATCH/.cache' PIP_CACHE_DIR='$SCRATCH/.pip-cache' && bash hprc/setup_env.sh"
 fi
 
 # --- 2) Species split + init the three datasets (single process) ---
