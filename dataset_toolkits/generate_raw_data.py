@@ -224,16 +224,16 @@ class Args:
     back (no teleport under spawn_once) - so all mobs stay close and observable for the
     whole clip. Set True for natural/uncontrolled trajectories that may leave the frame."""
 
-    num_dynamic_agents: int = 5
+    num_dynamic_agents: int = 8
     """Number of dynamic agents to spawn (used when min==max). Superseded by the
     min/max range below when they differ."""
 
-    num_dynamic_agents_min: int = 4
+    num_dynamic_agents_min: int = 7
     """Minimum number of dynamic agents per level (randomized per level)."""
 
-    num_dynamic_agents_max: int = 7
+    num_dynamic_agents_max: int = 10
     """Maximum number of dynamic agents per level (randomized per level). Each level
-    picks a random count in [min, max] (default 4-7), seeded by the level seed, so the
+    picks a random count in [min, max] (default 7-10), seeded by the level seed, so the
     number of mobs varies per level; the *mix* of species varies too because each slot
     draws a random entity from the seen/unseen list. Set min==max to fix the count."""
 
@@ -250,9 +250,9 @@ class Args:
     within its view; with spawn_in_view they land inside the forward cone with a clear
     line of sight to the player)."""
 
-    dynamic_agents_min_separation: float = 2.5
+    dynamic_agents_min_separation: float = 2.0
     """Minimum horizontal spacing between mobs at spawn, so the herd stays sparse but
-    still fits inside the forward view cone (smaller than before so all 4-7 mobs can be
+    still fits inside the forward view cone (small enough that up to 10 mobs can be
     placed in-view with a clear line of sight)."""
 
     dynamic_agents_max_speed: float = 0.0
@@ -344,10 +344,10 @@ class Args:
     level with too many unseen mobs is discarded and the slot is retried with a fresh
     seed. Guarantees the kept dataset has good mob coverage."""
 
-    max_unseen_allowed: int = 1
-    """Accept a level only if at most this many mobs are NOT seen. With the default 1
-    that means >= N-1 mobs seen: 6/7, 5/6, 4/5, 3/4, ... Otherwise the level is
-    discarded and reseeded. Set 0 to require EVERY mob be seen."""
+    max_unseen_allowed: int = 2
+    """Accept a level only if at most this many mobs are NOT seen. With the default 2
+    that means >= N-2 mobs seen: 8/10, 7/9, 6/8, 5/7, ... Otherwise the level is
+    discarded and reseeded. Set 0 to require EVERY mob be seen, 1 for >= N-1."""
 
     visibility_min_frames: int = 10
     """A mob counts as 'seen' for the acceptance gate only if visible in >= this many

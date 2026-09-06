@@ -18,7 +18,7 @@ cd "$SCRATCH/PERSIST"
 source hprc/container.sh
 FRAMES="${FRAMES:-600}"
 # Targets: train 100, eval 40 split 70/30 -> eval1 28 (seen), eval2 12 (unseen).
-TRAIN_N="${TRAIN_N:-100}"; EVAL1_N="${EVAL1_N:-28}"; EVAL2_N="${EVAL2_N:-12}"
+TRAIN_N="${TRAIN_N:-150}"; EVAL1_N="${EVAL1_N:-45}"; EVAL2_N="${EVAL2_N:-19}"
 
 ctr_exec "
   set -e

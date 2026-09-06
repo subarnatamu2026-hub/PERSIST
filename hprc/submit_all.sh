@@ -19,14 +19,14 @@ mkdir -p logs datasets
 ACCOUNT="${ACCOUNT:?set ACCOUNT (see: myproject)}"
 PARTITION="${PARTITION:?set PARTITION (Grace: medium/long; FASTER: cpu)}"
 # Dataset sizes (passed through to prepare.slurm; override for a smoke test).
-export TRAIN_N="${TRAIN_N:-100}"
-export EVAL1_N="${EVAL1_N:-28}"
-export EVAL2_N="${EVAL2_N:-12}"
+export TRAIN_N="${TRAIN_N:-150}"
+export EVAL1_N="${EVAL1_N:-45}"
+export EVAL2_N="${EVAL2_N:-19}"
 # Array widths = parallel workers per dataset. Capped to the level count so we
 # never launch idle workers (a worker with no seeds does nothing).
-WS_TRAIN="${WS_TRAIN:-$(( TRAIN_N < 50 ? TRAIN_N : 50 ))}"
-WS_EVAL1="${WS_EVAL1:-$(( EVAL1_N < 28 ? EVAL1_N : 28 ))}"
-WS_EVAL2="${WS_EVAL2:-$(( EVAL2_N < 12 ? EVAL2_N : 12 ))}"
+WS_TRAIN="${WS_TRAIN:-$TRAIN_N}"
+WS_EVAL1="${WS_EVAL1:-$EVAL1_N}"
+WS_EVAL2="${WS_EVAL2:-$EVAL2_N}"
 
 SB="sbatch --parsable --account=$ACCOUNT --partition=$PARTITION"
 
