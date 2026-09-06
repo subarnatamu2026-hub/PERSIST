@@ -338,11 +338,12 @@ class Args:
     position jumps more than this many blocks between two consecutive frames - far above
     normal walking/sprinting (~0.25/frame), so only physics glitches/teleports trip it."""
 
-    require_min_visibility: bool = True
+    require_min_visibility: bool = False
     """If True, a level is only ACCEPTED when enough of its mobs are actually seen on
     camera (frustum + distance + FOV + terrain-occlusion, same test as check_seen); a
     level with too many unseen mobs is discarded and the slot is retried with a fresh
-    seed. Guarantees the kept dataset has good mob coverage."""
+    seed. DEFAULT OFF: levels are kept regardless of how many mobs are seen (7-10 mobs
+    are still spawned per scene). Set True to re-enable the coverage gate."""
 
     max_unseen_allowed: int = 2
     """Accept a level only if at most this many mobs are NOT seen. With the default 2
@@ -423,6 +424,34 @@ def get_codebase_commits():
     }
 
 
+def _collect_used_seeds(dataset_dir):
+    """Return (set_of_used_seeds, ledger_path).
+
+    'Used' = every existing level-folder name across all datasets under dataset_dir
+    (datasets/<name>/raw/<env>/<seed>/) PLUS a persistent ledger file
+    (dataset_dir/used_seeds.txt). Reading existing folders means reseeded seeds from
+    earlier runs are also excluded, so a new run never reuses a previous seed.
+    """
+    used = set()
+    root = Path(dataset_dir)
+    try:
+        for p in root.glob("*/raw/*/*"):
+            if p.is_dir() and p.name.isdigit():
+                used.add(int(p.name))
+    except OSError:
+        pass
+    ledger = root / "used_seeds.txt"
+    if ledger.exists():
+        try:
+            for tok in ledger.read_text().split():
+                tok = tok.strip()
+                if tok.isdigit():
+                    used.add(int(tok))
+        except OSError:
+            pass
+    return used, ledger
+
+
 def generate_dataset_meta(args):
     dataset_root = os.path.join(args.dataset_dir, args.dataset_name)
     if os.path.exists(os.path.join(dataset_root, "dataset_params.json")):
@@ -498,10 +527,27 @@ def generate_dataset_meta(args):
     with open(os.path.join(dataset_root, "dataset_params.json"), "w") as f:
         json.dump(dataset_params, f, indent=4)
 
-    seeds = np.random.randint(0, 2**31, args.num_levels).tolist()
+    # Choose NEW seeds that were never used before (in this or any earlier run), so a
+    # later run generates fresh terrains instead of reusing old ones. "Used" = every
+    # existing level-folder name across all datasets + a persistent ledger file.
+    used_seeds, ledger = _collect_used_seeds(args.dataset_dir)
+    n_before = len(used_seeds)
+    seeds = []
+    while len(seeds) < args.num_levels:
+        s = int(np.random.randint(0, 2**31))
+        if s not in used_seeds:
+            used_seeds.add(s)
+            seeds.append(s)
     with open(os.path.join(dataset_root, "level_seeds.txt"), "w") as f:
         for s in seeds:
             f.write(f"{s}\n")
+    # Record the newly reserved seeds in the shared ledger so future runs skip them.
+    Path(args.dataset_dir).mkdir(parents=True, exist_ok=True)
+    with open(ledger, "a") as f:
+        for s in seeds:
+            f.write(f"{s}\n")
+    logger.info(f"Reserved {len(seeds)} new seeds (avoided {n_before} already-used); "
+                f"ledger: {ledger}")
 
 
 def check_codebase_match(dataset_params, args):
@@ -1181,9 +1227,12 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 env.unwrapped.mt.clear()
             return "error"
 
-    # Track every seed we've used (initial + reseeds) so replacements never collide
-    # or duplicate terrain.
+    # Track every seed we've used so reseeds never collide or duplicate terrain -
+    # this run's planned seeds PLUS every seed used by any earlier run (existing level
+    # folders + the ledger), so a reseed never reuses an old seed either.
     used_seeds = set(int(s) for s in total_level_seeds)
+    _prior_used, _ = _collect_used_seeds(args.dataset_dir)
+    used_seeds |= _prior_used
     reseed_rng = np.random.default_rng(1_000_003 * (args.rank + 1) + int(args.seed))
 
     def _fresh_seed():
