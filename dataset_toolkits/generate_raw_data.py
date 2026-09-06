@@ -233,10 +233,11 @@ class Args:
     """Minimum horizontal spacing between mobs at spawn/relocation, so the herd stays
     sparse (spread out) instead of clustering a lot of mobs in one place."""
 
-    dynamic_agents_max_speed: float = 3.0
-    """Cap on a mob's horizontal speed (blocks/second). Lowers each mob's configured
-    walk/run speed AND hard-clamps its actual velocity every frame, so fast mobs
-    (horses, spiders) don't zip across the scene. Vertical (fall/jump) is untouched."""
+    dynamic_agents_max_speed: float = 0.0
+    """Optional cap on a mob's horizontal speed (blocks/second). Default 0 = NO cap,
+    so every mob moves at its NATIVE VoxeLibre speed (normal game behaviour). Set > 0
+    only to slow unusually fast mobs: it then lowers each mob's configured walk/run
+    speed AND hard-clamps its velocity every frame. Vertical (fall/jump) is untouched."""
 
     dynamic_agents_view_half_angle: float = 65.0
     """Half-angle (degrees) of the player's view cone used to decide whether a spawn/
