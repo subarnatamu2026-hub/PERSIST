@@ -33,6 +33,20 @@ from utils.action_util import MultiDiscreteActionWrapper
 from dynamic_data import collect_dynamic_data
 from guided_nav import GuidedNavigator
 
+# Reuse the QA visibility logic (frustum + distance + FOV + terrain occlusion) so
+# the in-generation "min visibility" acceptance gate matches tools/check_seen.py
+# exactly. Guarded so generation still runs if the tools package can't be imported.
+try:
+    from tools.check_seen import (
+        _visible as _cs_visible,
+        _ray_clear as _cs_ray_clear,
+        _empty_ids as _cs_empty_ids,
+        _load_voxels as _cs_load_voxels,
+    )
+    _HAVE_CHECK_SEEN = True
+except Exception:  # noqa: BLE001
+    _HAVE_CHECK_SEEN = False
+
 EMPTY_SPACE_NODE_IDS = [126, 127]
 
 
@@ -315,14 +329,37 @@ class Args:
     violently (a large frame-to-frame position jump). Guarantees the kept dataset has no
     underwater / violently-shaking clips. Retries up to max_reseed_attempts times."""
 
-    max_reseed_attempts: int = 8
+    max_reseed_attempts: int = 12
     """Max fresh seeds to try for one level slot before giving up (avoids an infinite
-    loop if a rank keeps landing near water)."""
+    loop if a rank keeps landing near water or failing the visibility gate)."""
 
     shake_max_step: float = 2.0
     """A level is 'violently shaking' (and is discarded) if the player's horizontal
     position jumps more than this many blocks between two consecutive frames - far above
     normal walking/sprinting (~0.25/frame), so only physics glitches/teleports trip it."""
+
+    require_min_visibility: bool = True
+    """If True, a level is only ACCEPTED when enough of its mobs are actually seen on
+    camera (frustum + distance + FOV + terrain-occlusion, same test as check_seen); a
+    level with too many unseen mobs is discarded and the slot is retried with a fresh
+    seed. Guarantees the kept dataset has good mob coverage."""
+
+    max_unseen_allowed: int = 1
+    """Accept a level only if at most this many mobs are NOT seen. With the default 1
+    that means >= N-1 mobs seen: 6/7, 5/6, 4/5, 3/4, ... Otherwise the level is
+    discarded and reseeded. Set 0 to require EVERY mob be seen."""
+
+    visibility_min_frames: int = 10
+    """A mob counts as 'seen' for the acceptance gate only if visible in >= this many
+    frames (matches check_seen --min_frames)."""
+
+    visibility_max_dist: float = 15.0
+    """Max distance (blocks) a mob may be and still count toward the acceptance gate
+    (matches check_seen --max_dist)."""
+
+    visibility_fov_frac: float = 0.9
+    """Fraction of the FOV a mob must be inside to count toward the acceptance gate
+    (matches check_seen --fov_frac)."""
 
     water_avoid_radius: float = 12.0
     """Spawn the player at least this many blocks from any water, so episodes don't
@@ -558,6 +595,55 @@ def compute_intrisincs_extrinsics(level_data, dataset_params, device=torch.devic
         level_data[s]["intrinsics"] = intrinsics[i].cpu().numpy()
         level_data[s]["extrinsics_local"] = extrinsics_local[i].cpu().numpy()
         level_data[s]["extrinsics_global"] = extrinsics_global[i].cpu().numpy()
+
+
+def _count_seen(level_data, dyn, args):
+    """Return (n_mobs, n_seen) using the SAME visibility test as tools/check_seen.py:
+    a mob is 'seen' if it is in the camera frustum, within max_dist, inside fov_frac of
+    the FOV, and NOT occluded by terrain (voxel raycast), for >= min_frames frames.
+    Returns (0, 0) if the visibility helpers or mob data are unavailable."""
+    if not _HAVE_CHECK_SEEN or dyn is None:
+        return 0, 0
+    cam_pos = np.asarray(level_data["cam_pos"], dtype=np.float64)
+    cam_dir = np.asarray(level_data["cam_dir"], dtype=np.float64)
+    fov_x = np.asarray(level_data["fov_x"], dtype=np.float64)
+    fov_y = np.asarray(level_data["fov_y"], dtype=np.float64)
+    pos = np.asarray(dyn["dyn_pos"], dtype=np.float64)          # [T,N,3] bottom-centre
+    present = np.asarray(dyn["dyn_present"], dtype=bool)        # [T,N]
+    box = np.asarray(dyn["dyn_collisionbox"], dtype=np.float64)  # [T,N,6]; height=idx 4
+    T = min(cam_pos.shape[0], pos.shape[0])
+    N = pos.shape[1]
+    if N == 0 or T == 0:
+        return N, 0
+
+    vox_data = _cs_load_voxels(level_data)
+    if vox_data is not None:
+        vox, vcenter = vox_data
+        Tv = min(T, vox.shape[0])
+        origin = ((vox.shape[1] - 1) // 2, (vox.shape[2] - 1) // 2, (vox.shape[3] - 1) // 2)
+        empty_ids = _cs_empty_ids(vox)
+    else:
+        Tv = 0
+
+    md, mf, ff, step = (args.visibility_max_dist, args.visibility_min_frames,
+                        args.visibility_fov_frac, 0.5)
+    n_seen = 0
+    for m in range(N):
+        height = np.clip(box[:T, m, 4], 0.2, 4.0)
+        mid = pos[:T, m].copy()
+        mid[:, 1] += 0.5 * height
+        vis = np.zeros(T, bool)
+        for p in (pos[:T, m], mid):
+            vis |= _cs_visible(cam_pos[:T], cam_dir[:T], fov_x[:T], fov_y[:T], p, md, ff)
+        vis &= present[:T, m]
+        if vox_data is not None:
+            for t in np.nonzero(vis[:Tv])[0]:
+                if not _cs_ray_clear(cam_pos[t], mid[t], vox[t], vcenter[t], origin, empty_ids, step):
+                    vis[t] = False
+            vis[Tv:] = False
+        if int(vis.sum()) >= mf:
+            n_seen += 1
+    return N, n_seen
 
 
 def _level_is_bad(level_data, run_dir, args):
@@ -1018,6 +1104,37 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 env.unwrapped.close(not args.debug)
                 return "skipped"
 
+            # Collect the mob ground truth NOW (before saving) so we can both enforce the
+            # minimum-visibility gate and reuse it when writing data_dynamic.npz. Must run
+            # before env.close() clears the run directory.
+            dyn = None
+            if args.collect_dynamic_data:
+                try:
+                    dyn = collect_dynamic_data(
+                        env.unwrapped.mt.run_dir,
+                        np.asarray(level_data["player_pos"]),
+                        num_agents=None,   # auto-detect (count is randomized per level)
+                        entity_name=args.dynamic_agent_entity,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Failed to collect dynamic data for level {seed}: {e}")
+                    dyn = None
+
+            # Minimum-visibility gate: accept only if at most max_unseen_allowed mobs are
+            # NOT actually seen on camera (>= N-1 by default -> 6/7, 5/6, 4/5, 3/4). Uses
+            # the same frustum+distance+FOV+occlusion test as tools/check_seen.py.
+            if args.require_min_visibility and dyn is not None and _HAVE_CHECK_SEEN:
+                n_mobs, n_seen = _count_seen(level_data, dyn, args)
+                if n_mobs > 0 and (n_mobs - n_seen) > args.max_unseen_allowed:
+                    logger.info(
+                        f"Discarding level {seed}: only {n_seen}/{n_mobs} mobs visible "
+                        f"(need >= {n_mobs - args.max_unseen_allowed}). Reseeding.")
+                    stale = raw_data_root / str(seed)
+                    if stale.exists():
+                        shutil.rmtree(stale, ignore_errors=True)
+                    env.unwrapped.close(not args.debug)
+                    return "skipped"
+
             level_data["obs_voxel_mt"] = level_data["obs_voxel_mt"].astype(np.int16)
             level_folder = raw_data_root / str(seed)
             level_folder.mkdir(exist_ok=True, parents=True)
@@ -1041,22 +1158,13 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
                 with open(level_folder / "sha256.txt", "w") as f:
                     f.write(get_file_hash(level_folder / "data.npz"))
 
-            # Collect dynamic-agent (mobs/animals) data logged by Craftium and
-            # save it as an extra data_dynamic.npz aligned to the collected
-            # frames. Must run before env.close() clears the run directory.
-            if args.collect_dynamic_data:
+            # Save the mob ground truth collected above (reused, not recomputed).
+            if args.collect_dynamic_data and dyn is not None:
                 try:
-                    dyn = collect_dynamic_data(
-                        env.unwrapped.mt.run_dir,
-                        level_data["player_pos"],
-                        num_agents=None,  # auto-detect (count is randomized per level)
-                        entity_name=args.dynamic_agent_entity,
-                    )
-                    if dyn is not None:
-                        np.savez_compressed(level_folder / "data_dynamic.npz", **dyn)
-                        logger.info(f"Saved data_dynamic.npz for level {seed}")
-                except Exception as e:
-                    logger.warning(f"Failed to collect dynamic data for level {seed}: {e}")
+                    np.savez_compressed(level_folder / "data_dynamic.npz", **dyn)
+                    logger.info(f"Saved data_dynamic.npz for level {seed}")
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Failed to save dynamic data for level {seed}: {e}")
 
             logger.info(f"Finish saving level {seed}, length:{ts}, time:{time.time() - t_start}")
 
