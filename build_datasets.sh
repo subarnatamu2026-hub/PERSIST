@@ -50,4 +50,20 @@ run_group "$TRAIN_NAME" "$TRAIN_N" "$TRAIN_SEED" "$SEEN"
 run_group "$EVAL1_NAME" "$EVAL1_N" "$EVAL1_SEED" "$SEEN"
 run_group "$EVAL2_NAME" "$EVAL2_N" "$EVAL2_SEED" "$UNSEEN"
 
+# Record the seeds ACTUALLY used, per dataset. Each generated level folder is named
+# by the seed that produced it, so this captures reseeds too (a level that hit water
+# and was regenerated ends up under a different seed than the planned level_seeds.txt).
+MANIFEST="datasets/seeds_used.csv"
+echo "dataset,seed" > "$MANIFEST"
+for NAME in "$TRAIN_NAME" "$EVAL1_NAME" "$EVAL2_NAME"; do
+  d="datasets/$NAME/raw/$ENV"
+  [ -d "$d" ] || continue
+  for lvl in "$d"/*/; do
+    [ -d "$lvl" ] || continue
+    echo "$NAME,$(basename "$lvl")" >> "$MANIFEST"
+  done
+done
+echo "==> Seeds actually used written to $MANIFEST ($(($(wc -l < "$MANIFEST") - 1)) levels)"
+echo "    (planned seeds per dataset are also in datasets/<name>/level_seeds.txt)"
+
 echo "==> ALL DONE. Datasets: datasets/$TRAIN_NAME, datasets/$EVAL1_NAME, datasets/$EVAL2_NAME"
